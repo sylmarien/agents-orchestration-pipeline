@@ -1,21 +1,24 @@
 # Design: Semi-Autonomous Multi-Agent Pipeline
 
-> **Status: DRAFT** — topology decided: **Option B** (parallel review + docs). The alternative
-> topologies are retained in [Pipeline topology](#5-pipeline-topology) as the record of
-> alternatives considered. This document covers agent interactions (transition graphs with
+> **Status: DRAFT** — default topology: **Option A** (strict sequential / linear); Option B
+> (parallel review + docs) and Option C remain selectable via the `topology` knob. All three are
+> retained in [Pipeline topology](#5-pipeline-topology) as the record of alternatives considered. This document covers agent interactions (transition graphs with
 > diagrams), human gating, and agent responsibilities. No implementation exists yet; this file is
 > the source of truth for the design.
 
 | | |
 |---|---|
-| **Version** | 0.13.0 |
-| **Date** | 2026-07-07 |
+| **Version** | 0.16.0 |
+| **Date** | 2026-07-08 |
 | **Authors** | Maxime Schmitt (product owner), Claude (design assistance) |
 
 ## Changelog
 
 | Version | Changes |
 |---|---|
+| 0.16.0 | Closed the gap review. **Changed the default topology to Option A (linear)** — Option B/C remain selectable via the `topology` knob (updated Q1, §5, transition table, gates, autonomy depths, knob default). Added **Pipeline state and persistence** (§4): a per-pipeline state directory with per-node state files and an orchestrator pipeline-state file that is an append-style *history* (audit trail for routing, and the substrate that makes the pure-agent router and multi-session resume recoverable). Added **Permissions and sandboxing** (new §16, trusted-environment scope): no agent pushes to the default branch; only the submitter pushes the branch, creates the PR, and force-pushes; writes confined to worktree + state directory; network egress restricted to an allow-list with human approval otherwise. Worktrees are **auto-cleaned on completion** while the state directory persists; working artifacts (incl. design_doc) moved there so they survive cleanup. Reconcile conflicts (parallel topologies only) escalate to the human. Submitter PR-creation made host-agnostic (delegated to project instructions). Task independence and resource contention are the user's responsibility; crash-retry limits left out of scope. |
+| 0.15.0 | Resolved Q8 (design-doc storage): the design doc is a **temporary working artifact**, not a recorded deliverable — written as an uncommitted file in the pipeline's worktree, read by downstream stages during the run, and **never added to the PR's commit**, synced to a ticket, or published externally. Because a task may span sessions the pipeline does **not** delete it; it stays in the worktree after the task for the user to remove manually. Added a durability note to section 3 splitting artifacts into durable/published vs. ephemeral/working. All design questions (Q1–Q9) are now resolved. |
+| 0.14.0 | Resolved the graph-execution question (new Q9): v1 uses a **pure-agent** implementation — the orchestrator interprets the transition table as data and routes by reasoning over it; a deterministic routing engine is explicitly deferred until observed need (unreliable routing/gating/budget counting, or user graphs outgrowing hand-interpretation). Because the graph stays *data* (section 5), this forecloses nothing. Developed the end goal in section 13: a user supplies the workflow as a Mermaid diagram, which the orchestrator binds (inferring the artifact/autonomy/budget semantics a flowchart can't carry — leaning a "mix" of in-diagram topology/gates and inferred bindings), echoes back for confirmation, validates, and runs — with Mermaid diagram, transition table, and the resolved graph framed as renderings of one workflow model. |
 | 0.13.0 | Added configurable worktree placement (`worktree.root`, `worktree.name_template`): each pipeline — and each concurrently-running agent within a pipeline — gets an isolated worktree, default `../.agents-worktrees/{pipeline_id}[-{agent_id}]/{repo_name}`, so projects whose builds write artifacts outside the source tree don't clobber each other across parallel work. Refined P4 accordingly. |
 | 0.12.0 | Made agent decoupling explicit (P7): pipeline agents never address or know one another; the orchestrator alone interprets stage outcomes, routes artifacts, and spawns agents. Added the future direction this enables — user-defined agent graphs via configuration, including bring-your-own agents (new section 13, "Custom agent graphs"). |
 | 0.11.0 | Added per-agent model selection: default inherits the model active when the pipeline started; project config and prompt can override per agent or for all stages. |
@@ -159,7 +162,7 @@ Produces the technical design that satisfies the refined spec.
 |---|---|
 | Autonomy | `lean_ask` (depth 2) |
 | Inputs | refined spec, repository state |
-| Outputs | design doc *(durable storage location TBD — open question Q8)* |
+| Outputs | design doc *(ephemeral state-directory artifact — uncommitted, not published; Q8)* |
 
 **Responsibilities:**
 
@@ -243,7 +246,7 @@ Produces/updates user- and developer-facing documentation.
 
 | | |
 |---|---|
-| Autonomy | `decide` (depth 4, parallel with code reviewer) |
+| Autonomy | `decide` (depth 5) |
 | Inputs | diff, design doc, refined spec, implementation notes |
 | Outputs | docs changeset |
 
@@ -267,7 +270,7 @@ Reviews the documentation changeset for accuracy and completeness.
 
 | | |
 |---|---|
-| Autonomy | `decide` (depth 5) |
+| Autonomy | `decide` (depth 6) |
 | Inputs | docs changeset, diff, refined spec |
 | Outputs | docs review report (verdict: approve / request_changes) |
 
@@ -285,7 +288,7 @@ Packages the approved work into a pull request.
 
 | | |
 |---|---|
-| Autonomy | `full` (depth 6) |
+| Autonomy | `full` (depth 7) |
 | Inputs | diff, docs changeset, review report, docs review report, decision journal |
 | Outputs | pull request |
 
@@ -295,7 +298,11 @@ Packages the approved work into a pull request.
   history (implementation + docs commits) into a single commit whose message consolidates the
   change, rebased onto the latest default branch; then re-verify the build/tests/checks on the
   squashed result before pushing.
-- Push the branch; open the PR using the repo's PR template if present.
+- Push the pipeline branch and open the PR. **The submitter is the only agent permitted to push the
+  branch and to create the PR** (see [Permissions and sandboxing](#16-permissions-and-sandboxing));
+  *how* a PR is opened is host-specific and comes from the project's own instructions — this
+  pipeline is not GitHub-only and hard-codes no hosting provider. Use the repo's PR template if
+  present.
 - Include in the PR body: summary, verification evidence, and the decision journal (so reviewers
   see what was decided autonomously).
 - Report the PR URL back to the orchestrator.
@@ -310,7 +317,7 @@ reviews, and merge-conflict state, and routes actionable findings back into the 
 
 | | |
 |---|---|
-| Autonomy | `decide` (depth 7 — triages autonomously; routing goes through the orchestrator) |
+| Autonomy | `decide` (depth 8 — triages autonomously; routing goes through the orchestrator) |
 | Inputs | pull request, refined spec, design doc, decision journal |
 | Outputs | rework requests, PR status reports |
 
@@ -352,6 +359,20 @@ reviews, and merge-conflict state, and routes actionable findings back into the 
 | rework_request | pr_shepherd | yaml | finding, source event, proposed owner, severity |
 | pr_status_report | pr_shepherd | markdown | CI state, open threads, mergeability, terminal state |
 
+> **Durability of artifacts.** These split into two classes:
+>
+> - *Durable / published* — outlive the run: the `diff` and `docs_changeset` become the PR's single
+>   commit; the `decision_journal` rides in the PR body and the final report; the `refined_spec`
+>   syncs to the ticket when ticketing is active.
+> - *Ephemeral / working* — files in the pipeline's **state directory** (see
+>   [Pipeline state and persistence](#pipeline-state-and-persistence)), read by downstream stages
+>   during the run and **never committed** — being outside the git worktree they cannot be, so they
+>   stay out of the PR's single commit: `design_doc`, `implementation_notes`,
+>   `verification_evidence`, `review_report`, `docs_review_report`, `rework_request`,
+>   `pr_status_report`, and the `refined_spec` when ticketing is off. The pipeline does **not** delete
+>   these — the state directory outlives the auto-cleaned worktree, so after the run they remain for
+>   the user to keep or remove manually (Q8).
+
 ---
 
 ## 4. Orchestration and execution model
@@ -359,7 +380,10 @@ reviews, and merge-conflict state, and routes actionable findings back into the 
 ### Orchestration topology (common to all options)
 
 The orchestrator fans out one pipeline per task, each in its own worktree. Pipelines are
-independent; only the orchestrator and the user span them.
+independent; only the orchestrator and the user span them. Ensuring the tasks really are
+independent — no ordering dependency between them, no contention for a shared resource — is the
+user's responsibility; v1 does not sequence dependent tasks or cap the number of concurrent
+pipelines.
 
 ```mermaid
 flowchart TB
@@ -404,12 +428,14 @@ root's position in the filesystem. Giving each copy a unique parent while keepin
 means `../build` under one worktree and `../build` under another are different directories — so even
 build systems that hard-code a relative out-of-tree output path never collide.
 
-**Per-parallel-agent worktrees and reconciliation:** when a pipeline fans out to concurrent agents
-that each mutate a working tree (Options B/C), the orchestrator seeds each agent's worktree from the
-pipeline branch's current commit, then reconciles their outputs (commits/artifacts) back onto the
-pipeline branch when they rejoin — consistent with P5 (artifacts are the hand-off) and P7 (the
-orchestrator, not the agents, routes and merges). Stages that run alone, or are read-only, reuse the
-single per-pipeline worktree.
+**Per-parallel-agent worktrees and reconciliation** *(parallel topologies only — does not arise in
+the default linear topology)*: when a pipeline fans out to concurrent agents that each mutate a
+working tree (Options B/C), the orchestrator seeds each agent's worktree from the pipeline branch's
+current commit, then reconciles their outputs (commits/artifacts) back onto the pipeline branch when
+they rejoin — consistent with P5 (artifacts are the hand-off) and P7 (the orchestrator, not the
+agents, routes and merges). A reconciliation that will not merge cleanly is **escalated to the
+human, never auto-resolved**. Stages that run alone, or are read-only, reuse the single per-pipeline
+worktree; in the default linear topology there is only ever one active worktree per pipeline.
 
 **Knobs** (project layer — the right layout follows the project's build conventions):
 
@@ -418,6 +444,38 @@ single per-pipeline worktree.
 - `worktree.name_template` — the sub-path built under the root; default
   `{pipeline_id}[-{agent_id}]/{repo_name}`. Placeholders: `{pipeline_id}`, `{agent_id}` (empty when
   a single agent is active, collapsing the `-{agent_id}` segment), `{repo_name}`.
+
+### Pipeline state and persistence
+
+Every pipeline gets a **state directory** created by the orchestrator, separate from the throwaway
+git worktree. It is the durable home for everything that must survive a stage restart, a paused
+gate, or a gap of days between sessions:
+
+- **Per-node state files** — each agent writes its own progress to a file in this directory as it
+  works, so a crashed or resumed stage restarts from where it left off rather than from scratch
+  (this complements P5: the artifacts are the *between*-stage hand-off; the node-state file is the
+  *within*-stage progress).
+- **The orchestrator's pipeline-state file** — the orchestrator's own file tracking where the
+  pipeline is: current node, gate status, loop-budget counters, budget accumulators, and (in
+  parallel topologies) join state. This is the substrate that makes the pure-agent router of
+  [Q9](#q9--how-is-the-transition-graph-executed-llm-interpreted-routing-or-a-deterministic-engine)
+  recoverable — routing position lives in a file, not only in the orchestrator's context window.
+- **A record, not just a snapshot.** The pipeline-state file is append-style: it records the
+  *history* of transitions, gate events, and positions over time, not only the latest state. That
+  history is the audit trail for control flow (complementary to the decision journal, which records
+  *decisions*), and it is what one inspects to catch the kind of misroute, skipped gate, or
+  miscounted budget whose observation is the trigger to revisit Q9.
+- **Working artifacts** — the ephemeral/working artifacts of
+  [Shared artifacts](#3-shared-artifacts-the-hand-off-contracts) (design_doc, implementation notes,
+  verification evidence, review reports) live here too. Being outside the git worktree, they are
+  inherently uncommitted and they survive worktree cleanup.
+
+**Worktree lifecycle.** The git worktree(s) are working scratch: the orchestrator **auto-cleans
+them when the pipeline is done** (terminal at G8, or when the user stops the run). The state
+directory is *not* auto-deleted — it persists after the run so the history and working artifacts
+remain available; per [Q8](#q8--where-does-the-designers-output-design_doc-live-durably) the user
+removes it manually if they want. *(Future: when tooling allows re-purposing an existing worktree
+instead of recreating it, cleanup may give way to reuse; for now it is unconditional auto-cleanup.)*
 
 ### Decoupling and mediation (hub-and-spoke)
 
@@ -469,25 +527,32 @@ be able to inspect — or step into — any agent mid-flight.
 
 ## 5. Pipeline topology
 
-**DECIDED: Option B (parallel review + docs)** — decided by the user on 2026-07-07.
+**DEFAULT: Option A (strict sequential / linear)** — changed from Option B on 2026-07-08 (see
+[Q1](#q1--which-topology-for-v1)). Option B (parallel review + docs) and Option C remain fully
+specified and selectable via the `topology` knob.
 
-> **Rationale:** wall-clock savings from parallel review and documentation outweigh the
-> coordination cost; the waste from a review bounce is bounded to the docs changeset (never the
-> whole pipeline) and is handled explicitly by the L6 "diff changed, recheck docs" edge.
+> **Rationale:** start with the simplest topology that works. Linear has no parallel fan-out, so
+> there is no join to implement, no per-agent worktree reconciliation, and no docs-dirty tracking —
+> the whole class of concurrency and merge-reconciliation complexity disappears. It is the easiest
+> to reason about and to gate, and it keeps the pure-agent orchestrator (see
+> [Q9](#q9--how-is-the-transition-graph-executed-llm-interpreted-routing-or-a-deterministic-engine))
+> markedly simpler. The cost is wall-clock time — documentation waits for code review instead of
+> running beside it — a trade accepted for v1 and revisited only if the serialization proves painful
+> in practice.
 >
-> **Consequences:** the orchestrator must implement the join (both reviewers approve before the
-> submitter starts) and docs-dirty tracking after L1 bounces. Gate G4 does not exist in this
-> topology (code-review approval feeds the join, gated by G6); G5 still gates documenter → docs
-> reviewer.
+> **Consequences:** the forward spine is R → D → I → CR → DOC → DR → S. Gate G4 (code-review
+> sign-off) exists on this spine; there is no join and no L6 "recheck docs" edge (both are
+> Option-B-only). Selecting `topology: option_b` re-activates the parallel edges, the join, and the
+> per-agent worktree reconciliation described under Option B below.
 >
-> **Implementation note:** even with Option B chosen, drive the state machine from the transition
-> table — not hard-coded control flow — so topology changes stay data changes. Option A is
-> essentially Option B with the parallel edge removed, so no incremental path via A is needed.
+> **Implementation note:** drive the state machine from the transition table — not hard-coded
+> control flow — so switching topology stays a data change (this is what makes Option B a knob flip
+> rather than a rewrite).
 
 Legend for all diagrams: solid arrow = forward hand-off · dashed arrow = rework/escalation loop ·
 `G#` = gateable transition.
 
-### Option B — Parallel review and documentation (CHOSEN)
+### Option B — Parallel review and documentation (alternative)
 
 After implementation, code review and documentation run concurrently; docs review follows
 documentation; the submitter waits on both approval branches (join). Saves wall-clock time; a
@@ -519,12 +584,12 @@ flowchart LR
     PS -.->|rebase / re-push| S
 ```
 
-### Option A — Strict sequential with rework loops (not chosen)
+### Option A — Strict sequential with rework loops (DEFAULT)
 
 Fully linear: each stage completes before the next starts. Backward edges handle rework (review
-bounces) and escalation (design flaws, spec gaps). Simplest to reason about, easiest to gate,
-slowest wall clock because docs wait for code review; review bounces re-serialize everything
-downstream.
+bounces) and escalation (design flaws, spec gaps). Simplest to reason about, easiest to gate; the
+trade-off is wall clock — docs wait for code review, and a review bounce re-serializes everything
+downstream. Chosen as the v1 default for that simplicity (see the decision above).
 
 ```mermaid
 flowchart LR
@@ -543,7 +608,7 @@ flowchart LR
     I -.->|design infeasible| D
 ```
 
-### Option C — Docs-from-design (not chosen)
+### Option C — Docs-from-design (alternative)
 
 The documenter drafts from the design doc in parallel with the implementer, then reconciles the
 draft against the final reviewed diff. Docs review runs last as the reconciliation check. Maximum
@@ -571,9 +636,10 @@ flowchart LR
 
 ### Transition table (normative; diagrams above are views of this table)
 
-Chosen topology: **option_b** — the active edges are those whose Options column contains B; rows
-tagged only A or C are dormant. Rows with a gate id are gateable; whether the gate actually
-blocks is decided by the run's gate policy (see [Human gating](#6-human-gating)).
+Default topology: **option_a** — the active edges are those whose Options column contains A; rows
+tagged only B or C are dormant unless that topology is selected via the `topology` knob. Rows with a
+gate id are gateable; whether the gate actually blocks is decided by the run's gate policy (see
+[Human gating](#6-human-gating)).
 
 This table is **the orchestrator's routing data, and only the orchestrator's** (P7). The agents
 named in the From/To columns never read it and are unaware of the graph: an agent produces a
@@ -650,7 +716,7 @@ are logged as passed-through (with the same bundle attached) so the user can aud
 | G1 | T1 | spec_approval | refined spec | |
 | G2 | T2 | design_approval | design doc | |
 | G3 | T3 | implementation_done | diff, verification evidence | |
-| G4 | T4 | code_review_signoff | review report | does not exist in Option B |
+| G4 | T4 | code_review_signoff | review report | on the linear (default) spine and Option C; absent in Option B, where code-review approval feeds the join gated by G6 |
 | G5 | T5 | docs_done | docs changeset | |
 | G6 | T6 | pre_submit | docs review report, full bundle | |
 | G7 | T7 | pr_created | pull request | notification-only by default (fires after the fact); the pr_shepherd starts watching here |
@@ -682,7 +748,7 @@ suppress it.
 | "let me sign off on the design but nothing else" | preset: full_auto, add: G2 |
 | "checkpoint, but I also want to see the diff" | preset: checkpoint, add: G3 |
 
-### Gate placement (Option A spine, for illustration)
+### Gate placement (default / Option A spine)
 
 ```mermaid
 flowchart LR
@@ -713,7 +779,7 @@ decision journal.
 | `decide` | never asks the user directly; loop edges + budgets only | Verdicts and content decisions are the agent's own. Disagreement is expressed through the transition graph (request changes, escalate design), and loop-budget exhaustion is what reaches the human. |
 | `full` | never asks; failures are reported, not negotiated | Mechanical stage; anything surprising is a pipeline error. |
 
-### Stage assignment (Option B depths)
+### Stage assignment (default linear topology)
 
 | Depth | Agent | Autonomy |
 |---|---|---|
@@ -721,18 +787,18 @@ decision journal.
 | 2 | designer | lean_ask |
 | 3 | implementer | lean_decide |
 | 4 | code_reviewer | decide |
-| 4 | documenter | decide |
-| 5 | documentation_reviewer | decide |
-| 6 | submitter | full |
-| 7 | pr_shepherd | decide |
+| 5 | documenter | decide |
+| 6 | documentation_reviewer | decide |
+| 7 | submitter | full |
+| 8 | pr_shepherd | decide |
 
 ```mermaid
 flowchart LR
     R["Refiner<br/>(ask_freely)"] --> D["Designer<br/>(lean_ask)"] --> I["Implementer<br/>(lean_decide)"]
     I --> CR["Code Reviewer<br/>(decide)"]
-    I --> DOC["Documenter<br/>(decide)"]
-    CR --> S["Submitter<br/>(full)"]
-    DOC --> DR["Docs Reviewer<br/>(decide)"] --> S
+    CR --> DOC["Documenter<br/>(decide)"]
+    DOC --> DR["Docs Reviewer<br/>(decide)"]
+    DR --> S["Submitter<br/>(full)"]
     U([User]) -.->|many answers| R
     U -.->|structural choices only| D
     U -.->|design-invalidating surprises only| I
@@ -836,7 +902,7 @@ Every knob: where defined, its built-in default.
 
 | Knob | Defined in | Default | Per |
 |---|---|---|---|
-| `topology` | Pipeline topology | option_b | pipeline |
+| `topology` | Pipeline topology | option_a | pipeline |
 | `worktree.root` | Orchestration → worktree placement | `../.agents-worktrees` (relative to the source repo root) | project |
 | `worktree.name_template` | Orchestration → worktree placement | `{pipeline_id}[-{agent_id}]/{repo_name}` | project |
 | `gates.preset` | Human gating → presets | checkpoint *(confirmed default, Q5 resolved)* | pipeline |
@@ -1088,6 +1154,38 @@ configuration change rather than a rewrite:
 - reuse of the existing gate, loop-budget, autonomy, budget, and model machinery, since those key
   off node ids and outcomes, not off the specific built-in agents.
 
+**Authoring surface — from a drawn graph to a runnable workflow.** The north-star experience is that
+a user supplies the workflow *itself* — ideally as a **Mermaid diagram** (the same notation this
+document uses for every topology) — and the pipeline runs it. Per
+[Q9](#q9--how-is-the-transition-graph-executed-llm-interpreted-routing-or-a-deterministic-engine),
+v1 runs it with the orchestrator agent as the interpreter (no separate engine yet); a deterministic
+executor is a later extraction, not a prerequisite. Mermaid is a natural authoring surface because
+it is what humans already read and draw, but a flowchart is **under-specified for execution**: it
+carries node ids, edges, and free-text edge labels, but not the semantics needed to route it — which
+agent implements each node (`impl`), each node's `consumes`/`produces` contract, the *typed* outcome
+a prose label like "request changes" stands for, the gate id on an edge, forward-vs-rework
+classification, autonomy level, and loop budgets. Two things must therefore be settled (both
+currently open, both future-direction):
+
+- **Where the execution semantics live** relative to the diagram: encoded *in* the Mermaid through a
+  documented label/class convention (`-->|G1: spec ready|` ⇒ gate G1 + trigger `spec ready`; dashed
+  edge ⇒ rework; node `class` ⇒ agent binding); carried *alongside* it in a small sidecar that binds
+  node ids → agent definitions and edge labels → typed outcomes; or a **mix** (topology, gates, and
+  triggers in the diagram; artifact contracts and budgets in the sidecar). The section 5 transition
+  table is already this binding layer in tabular form. *Leaning: the mix* — the diagram carries what
+  humans want to draw, and the rest is inferred/bound when the graph is loaded.
+- **How the diagram is turned into a runnable graph.** In the v1 pure-agent model the orchestrator
+  reads the Mermaid, *infers* the artifact/autonomy/budget bindings by inspecting the referenced
+  agents, **echoes the resolved graph back to the user for confirmation** (like the resolved-config
+  echo in section 9), applies the validation checks below, and then interprets it directly. If
+  hand-interpretation later proves unreliable (the Q9 revisit trigger), the same resolved graph
+  becomes the canonical spec a deterministic engine consumes — the authoring surface does not change,
+  only the executor behind it.
+
+The consequence is a single canonical graph model with three renderings — the **Mermaid diagram**
+(author/read), the **transition table** (review), and the resolved/bound **graph** the orchestrator
+runs — the diagram and table being views of the same underlying workflow.
+
 **Validation the orchestrator must add** (so a hand-written graph fails fast, per the config
 model's fail-fast rule): every edge references declared nodes; the artifact dependency graph is
 closed (every `consumes` is produced upstream or supplied at intake) and acyclic except through
@@ -1168,16 +1266,56 @@ installing or configuring the plugin itself.
 |---|---|
 | Stage crash | Orchestrator restarts the stage from its input artifacts (P5). |
 | Loop budget exceeded | Escalate to human with both sides' arguments; human picks direction or aborts. |
-| Worktree conflict | Pipelines and concurrent same-pipeline agents never share a worktree (P4), and out-of-tree build artifacts stay isolated via [worktree placement](#worktree-placement-and-isolation). Conflicts can therefore only surface when the orchestrator reconciles parallel work onto the pipeline branch, or at PR merge time — the latter is the submitter's job to surface, not silently resolve. |
+| Worktree conflict | Pipelines and concurrent same-pipeline agents never share a worktree (P4), and out-of-tree build artifacts stay isolated via [worktree placement](#worktree-placement-and-isolation). Conflicts can only surface in a parallel topology when the orchestrator reconciles concurrent work onto the pipeline branch — **escalated to the human, never auto-merged** — or at PR merge time, which is the submitter's to surface, not silently resolve. The default linear topology has one active worktree, so neither arises from concurrency. |
 | Abort | Orchestrator preserves the worktree and all artifacts, reports state and journal to the user; nothing is force-deleted. |
 
 ---
 
-## 16. Resolved questions
+## 16. Permissions and sandboxing
+
+The pipeline is designed to run in a **trusted environment**: these controls guard against
+accidental damage and runaway autonomy, not against a malicious insider or adversarial inputs.
+Hardening against untrusted tickets, PR comments, CI logs, or repository content is explicitly a
+non-goal for v1 — those inputs are assumed to come from trusted collaborators.
+
+**Git / publishing authority:**
+
+- Agents may commit only inside their own worktree. **No agent may push to the default branch**
+  (e.g. `main`) under any circumstance.
+- **Only the submitter** pushes the pipeline branch and **creates the PR**; no other agent does
+  either. PR-creation mechanics are delegated to the project's own instructions, so the pipeline is
+  not tied to any one hosting provider.
+- **Force-pushing is restricted to the submitter** (the agent that manages the PR) — used for the
+  squashed single commit and for post-review re-pushes (edges L7–L10). No other agent force-pushes
+  anything.
+
+**Filesystem:**
+
+- Writes are confined to the agent's assigned worktree and its slice of the pipeline
+  [state directory](#pipeline-state-and-persistence). Agents do not write elsewhere on the host.
+
+**Network egress:**
+
+- Outbound fetches/downloads (e.g. `curl`, package installs) are restricted to an **allow-listed
+  set of domains**. A fetch outside the allow-list is never performed autonomously — it **requires
+  human approval** first.
+
+These guarantees apply to bundled and bring-your-own agents alike (the sandbox referenced in
+[Custom agent graphs](#13-custom-agent-graphs-future-direction)).
+
+---
+
+## 17. Resolved questions
 
 ### Q1 — Which topology for v1?
 
-**Resolution:** option_b, decided by the user on 2026-07-07 (see
+**Resolution:** **option_a** (strict sequential / linear) is the v1 default. The user initially
+chose option_b (2026-07-07) but changed the default to the linear topology on 2026-07-08 to start
+with the simplest workflow: no parallel fan-out means no join, no per-agent worktree reconciliation,
+and a simpler pure-agent orchestrator (see
+[Q9](#q9--how-is-the-transition-graph-executed-llm-interpreted-routing-or-a-deterministic-engine)).
+Option B (parallel review + docs) and Option C remain fully specified and selectable via the
+`topology` knob; parallelization is deferred, not discarded (see
 [Pipeline topology](#5-pipeline-topology)).
 
 ### Q2 — Does the submitter also babysit the PR, or does the pipeline end at PR creation?
@@ -1264,22 +1402,67 @@ carry secrets. Something must inject the credential at run time.
 that is not guaranteed at the moment. Connectivity validated at spawn (fail fast per the jira
 mode's validation rule).
 
----
+### Q9 — How is the transition graph executed: LLM-interpreted routing or a deterministic engine?
 
-## 17. Open questions
+**Context:** The transition table (section 5) is normative graph *data*, and P7 makes the
+orchestrator its sole interpreter. This question settles the *mechanism* of interpretation at each
+stage boundary — does the LLM orchestrator read the table and reason out the next edge, or does it
+delegate routing to a deterministic engine and act on its answer? A control-plane question: it
+changes nothing about the graph, only what evaluates it. It bears on correctness because routing
+governs gate activation (including the always-on GE1/GB1 safety gates), loop-budget counting, and
+the Option B join.
+
+| Option | Mechanics | Pros | Cons |
+|---|---|---|---|
+| llm_interpreted | The orchestrator holds the table in-context and reasons out each transition itself: reads the agent's outcome, picks the edge, and tracks budgets and the join in its own working memory. | Nothing extra to build; naturally tolerant of messy or ambiguous outcomes; routing lives with the judgment the orchestrator already exercises (gate conversations, Q3 re-entry). | Non-deterministic on correctness-critical control flow — a misrouted edge, a skipped gate, or a miscounted budget is a trust/safety failure; stateful counting (budgets, join completion) is what LLMs do least reliably over a long context; not unit-testable; auditing "why this edge" means reading reasoning traces. |
+| routing_engine | A deterministic module returns the next edge + agent + gate + updated state from (node, typed outcome, state); the orchestrator executes it and never overrides it. | Deterministic, exhaustively testable, auditable (exact edge trace); is the "table + validating interpreter" section 13's custom graphs need; frees the LLM from re-reasoning routing. | Real engineering to build and maintain (engine + outcome schema + validator); demands an airtight typed-outcome contract with a defined unknown ⇒ escalate fallback. |
+| hybrid | The engine owns the mechanical, correctness-critical control plane; the LLM owns only the judgment layer (normalizing rich results into typed outcomes, gate conversations, Q3 re-entry). | Determinism where correctness lives, LLM flexibility where judgment lives. | Requires a sharp, documented mechanical/judgment boundary. |
+
+**Resolution:** start with **llm_interpreted** — a **pure-agent implementation** in which the
+orchestrator agent holds the transition table as data and routes by reasoning over it — decided by
+the user on 2026-07-08. Rationale: it is the simplest path to a working pipeline, and because the
+graph already lives in the table *as data* (section 5's "drive the state machine from the
+transition table, not hard-coded control flow"), choosing the LLM as the interpreter forecloses
+nothing — a `routing_engine`/`hybrid` can be extracted later without touching the graph or the
+agents. The determinism, testability, and reliable budget/gate/join bookkeeping a deterministic
+engine would buy are the accepted v1 risk; the trigger to revisit is *observed* unreliability in
+routing, gate activation, or loop-budget counting (or the point at which arbitrary user-supplied
+graphs, per section 13, outgrow what the orchestrator interprets reliably by hand). The guiding
+rule is "adjust once we notice we need scripts," not "build the engine up front." The
+Mermaid-authored-graph end goal (section 13) is unchanged — for v1 the orchestrator agent both
+interprets a supplied graph and routes it; only the eventual extraction of a separate *executor*
+is deferred, not the goal.
 
 ### Q8 — Where does the designer's output (design_doc) live durably?
 
-**Context:** the refined spec now has a durable home when ticketing is active (it is synced back
-to the ticket). The design doc has no equivalent yet — it is a pipeline artifact handed to the
-implementer/documenter, but where it is stored for humans to find later is TBD.
+**Context:** the refined spec has a durable home when ticketing is active (it is synced back to the
+ticket). The design doc had no equivalent — it is a pipeline artifact handed to the
+implementer/documenter, and where (if anywhere) it is stored for humans to find later was the open
+question.
 
 | Option | Mechanics | Pros | Cons |
 |---|---|---|---|
 | ticketing_system | Attached document or structured comment on the GitHub issue / Jira ticket. | Design lives next to the requirement it satisfies; no repo noise. | Ticket attachments are where documents go to die; hard to diff/review; unavailable when ticketing=none. |
 | repo_document | Committed file (e.g. `docs/design/<ticket-or-task>.md`) included in the PR's single commit. | Versioned with the code it describes; reviewed through the same PR; survives ticket-system migrations; works with ticketing=none. | Accumulates in the repo; risks drifting from the code after later changes. |
 | external_system | Published to another system (wiki, Confluence, blog-like design log) with a link from ticket and PR. | Fits organizations with an established design-doc home. | Another integration + credential story (same class of problem as Q7); link rot. |
+| ephemeral_state_file | A markdown file in the pipeline's state directory (outside the git worktree), read by downstream stages during the run; never committed, synced, or published, and never auto-deleted. | No durable-storage machinery at all; zero repo/ticket noise; works in every configuration. | No home for humans to find the design after the run other than the state directory it was left in; not versioned. |
 
-**Leaning:** none recorded — explicitly TBD per the user. repo_document is the only option that
-works in every configuration (including ticketing=none), so whatever is chosen likely needs it as
-the fallback.
+**Resolution:** ephemeral_state_file — decided by the user on 2026-07-08. The design doc is a
+**temporary working artifact**, useful only while the task is in progress: it is written to the
+pipeline's [state directory](#pipeline-state-and-persistence) (outside the git worktree, so
+inherently uncommitted) and read by the implementer, documenter, and reviewers, but it is **never
+added to the PR's commit**, never synced to a ticket, and never published externally. Because a task
+may span multiple sessions, the pipeline does **not** clean it up — the git worktree is auto-cleaned
+on completion (Q6) but the state directory persists, so the design doc stays there after the task
+ends for the user to delete manually if they want. This sets the default for the pipeline's other working artifacts too (implementation
+notes, verification evidence, the review reports); see the durability note under
+[Shared artifacts](#3-shared-artifacts-the-hand-off-contracts). The earlier observation that
+repo_document is the only option surviving ticketing=none no longer applies, since durable storage
+is explicitly a non-goal for this artifact.
+
+---
+
+## 18. Open questions
+
+_None at present — Q1–Q9 are all resolved (see [Resolved questions](#17-resolved-questions)). New
+questions will be recorded here as they arise._
