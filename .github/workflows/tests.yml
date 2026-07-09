@@ -1,0 +1,26 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: pip install pytest pyyaml
+
+      # Runs the deterministic unit tests introduced in each implementation step
+      # (docs/implementation/*.md, "Tier 1 -- unit tests"). Exit code 5 means pytest found no
+      # tests to collect, which is expected on branches that predate the first test suite
+      # (Step 1); any other non-zero exit is a real failure and fails the build.
+      - name: Run tests
+        run: pytest -q || [ "$?" = "5" ]
