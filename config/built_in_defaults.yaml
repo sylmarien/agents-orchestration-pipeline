@@ -1,0 +1,87 @@
+# Configuration layer 1 (design doc §9 knob registry).
+#
+# One entry per knob, exactly the "Default" column of the knob registry. This is the single
+# source of truth for defaults: a zero-config run (no pipeline.yaml, bare prompt) resolves
+# entirely from this file, so every knob in config_schema.json must have an entry here.
+#
+# Knobs whose registry default is "derived" rather than a literal value are intentionally
+# omitted or set to null:
+#   - model.<agent> (default: "model.default") is resolved at use-time against model.default,
+#     not stored here.
+#   - checks.build / checks.test / checks.static (default: "auto-detected from the repo") are
+#     null here; the implementer stage (Step 4) fills gaps left null by auto-detecting the
+#     project's build/test/static tooling.
+
+# Only value this build supports -- see config_schema.json's description for topology and
+# docs/implementation/README.md §7 ("Out of scope"). option_b/option_c are not implemented.
+topology: option_a
+
+worktree:
+  root: ../.agents-worktrees
+  name_template: "{pipeline_id}[-{agent_id}]/{repo_name}"
+
+gates:
+  preset: checkpoint
+  add: []
+  remove: []
+
+escalation_policy: gradient
+
+autonomy:
+  refiner: ask_freely
+  designer: lean_ask
+  implementer: lean_decide
+  code_reviewer: decide
+  documenter: decide
+  documentation_reviewer: decide
+  submitter: full
+  pr_shepherd: decide
+
+loop_limits:
+  l1: 3
+  l3: 3
+  escalations: 2
+  post_pr: 5
+
+implementer:
+  inner_loop:
+    max_iterations: 10
+  tdd: required_when_possible
+
+checks:
+  build: null
+  test: null
+  static: null
+
+submitter:
+  single_commit: true
+
+pr_shepherd:
+  enabled: true
+
+documenter:
+  skip_allowed: true
+
+decision_journal:
+  in_pr_body: true
+
+budget:
+  tokens: null
+  usd: null
+  warn_ratio: 0.8
+
+model:
+  default: inherit
+
+ticketing:
+  system: none
+  jira:
+    url: null
+    project: null
+  status_mapping:
+    start: In Progress
+    pr: In Review
+    merged: Done
+  post_report: true
+  sync_spec: true
+  create_if_missing: prompt

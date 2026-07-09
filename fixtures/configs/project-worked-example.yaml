@@ -1,0 +1,8 @@
+# Project config half of the design §9 worked example.
+gates:
+  preset: checkpoint
+checks:
+  build: bazel build //src/RayTracingWeekend:RayTracingWeekend
+  static: [clang-format --dry-run -Werror, clang-tidy]
+submitter:
+  single_commit: true

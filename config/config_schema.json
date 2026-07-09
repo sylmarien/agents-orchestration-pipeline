@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-pipeline/config_schema.json",
+  "title": "agent-pipeline pipeline.yaml configuration",
+  "description": "Schema for the agent-pipeline knob registry (design doc §9). Validates configuration layer 2 (project_config) and layer 3 (user_prompt delta), and the fully resolved configuration. additionalProperties is false at every level so unknown keys are rejected (fail-fast).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "topology": {
+      "type": "string",
+      "description": "Only option_a (strict sequential, design doc §5) is implemented. option_b and option_c are documented in the design as future alternatives but are out of scope for this build: no dormant data, agents, or logic for them exist anywhere in this plugin. The enum is deliberately restricted to option_a rather than accepting-but-ignoring the other values, so a project or prompt that requests one fails fast instead of silently running option_a.",
+      "enum": ["option_a"]
+    },
+    "worktree": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "root": { "type": "string", "minLength": 1 },
+        "name_template": { "type": "string", "minLength": 1 }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preset": {
+          "type": "string",
+          "enum": ["full_auto", "checkpoint", "pre_submit_only", "paranoid"]
+        },
+        "add": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/gateId" }
+        },
+        "remove": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/gateId" }
+        }
+      }
+    },
+    "escalation_policy": {
+      "type": "string",
+      "enum": ["gradient", "never"]
+    },
+    "autonomy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "refiner": { "$ref": "#/$defs/autonomyLevel" },
+        "designer": { "$ref": "#/$defs/autonomyLevel" },
+        "implementer": { "$ref": "#/$defs/autonomyLevel" },
+        "code_reviewer": { "$ref": "#/$defs/autonomyLevel" },
+        "documenter": { "$ref": "#/$defs/autonomyLevel" },
+        "documentation_reviewer": { "$ref": "#/$defs/autonomyLevel" },
+        "submitter": { "$ref": "#/$defs/autonomyLevel" },
+        "pr_shepherd": { "$ref": "#/$defs/autonomyLevel" }
+      }
+    },
+    "loop_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "l1": { "type": "integer", "minimum": 1 },
+        "l3": { "type": "integer", "minimum": 1 },
+        "escalations": { "type": "integer", "minimum": 1 },
+        "post_pr": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "implementer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inner_loop": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_iterations": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "tdd": {
+          "type": "string",
+          "enum": ["required_when_possible", "off"]
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "build": { "type": ["string", "null"], "minLength": 1 },
+        "test": { "type": ["string", "null"], "minLength": 1 },
+        "static": {
+          "type": ["array", "null"],
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "submitter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "single_commit": { "type": "boolean" }
+      }
+    },
+    "pr_shepherd": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "documenter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "skip_allowed": { "type": "boolean" }
+      }
+    },
+    "decision_journal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "in_pr_body": { "type": "boolean" }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tokens": { "type": ["integer", "null"], "minimum": 1 },
+        "usd": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+        "warn_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default": { "type": "string", "minLength": 1 },
+        "refiner": { "type": "string", "minLength": 1 },
+        "designer": { "type": "string", "minLength": 1 },
+        "implementer": { "type": "string", "minLength": 1 },
+        "code_reviewer": { "type": "string", "minLength": 1 },
+        "documenter": { "type": "string", "minLength": 1 },
+        "documentation_reviewer": { "type": "string", "minLength": 1 },
+        "submitter": { "type": "string", "minLength": 1 },
+        "pr_shepherd": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ticketing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "type": "string",
+          "enum": ["none", "github_issues", "jira"]
+        },
+        "jira": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": { "type": ["string", "null"], "minLength": 1 },
+            "project": { "type": ["string", "null"], "minLength": 1 }
+          }
+        },
+        "status_mapping": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": { "type": "string", "minLength": 1 },
+            "pr": { "type": "string", "minLength": 1 },
+            "merged": { "type": "string", "minLength": 1 }
+          }
+        },
+        "post_report": { "type": "boolean" },
+        "sync_spec": { "type": "boolean" },
+        "create_if_missing": {
+          "type": "string",
+          "enum": ["prompt", "never"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["system"],
+            "properties": { "system": { "const": "jira" } }
+          },
+          "then": {
+            "required": ["jira"],
+            "properties": {
+              "jira": {
+                "type": "object",
+                "required": ["url", "project"],
+                "properties": {
+                  "url": { "type": "string", "minLength": 1 },
+                  "project": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "gateId": {
+      "type": "string",
+      "enum": ["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "GB1", "GE1", "GE2"]
+    },
+    "autonomyLevel": {
+      "type": "string",
+      "enum": ["ask_freely", "lean_ask", "lean_decide", "decide", "full"]
+    }
+  }
+}

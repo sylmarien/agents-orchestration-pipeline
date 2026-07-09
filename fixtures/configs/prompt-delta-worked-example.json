@@ -1,0 +1,4 @@
+{
+  "gates": { "preset": "full_auto" },
+  "implementer": { "inner_loop": { "max_iterations": 20 } }
+}
