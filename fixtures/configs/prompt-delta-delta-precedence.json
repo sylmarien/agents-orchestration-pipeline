@@ -1,0 +1,4 @@
+{
+  "gates": { "add": ["G6"] },
+  "budget": { "warn_ratio": 0.5 }
+}

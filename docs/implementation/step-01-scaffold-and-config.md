@@ -26,7 +26,7 @@ makes "install the plugin and resolve a config" work and be tested.
 config/config_schema.json
 config/built_in_defaults.yaml
 lib/resolve_config.py
-fixtures/configs/{project-a.yaml, prompt-delta-a.json, expected-resolved-a.json, ...}
+fixtures/configs/{project-worked-example.yaml, prompt-delta-worked-example.json, expected-resolved-worked-example.json, ...}
 tests/test_resolve_config.py
 tests/test_schema.py
 ```
@@ -45,8 +45,12 @@ JSON Schema (draft 2020-12) covering **every knob in the registry** ([§9 knob r
 `topology`, `worktree.*`, `gates.preset`/`gates.add`/`gates.remove`, `escalation_policy`,
 `autonomy.<agent>`, `loop_limits.*`, `implementer.*`, `checks.*`, `submitter.single_commit`,
 `pr_shepherd.enabled`, `documenter.skip_allowed`, `decision_journal.in_pr_body`, `budget.*`,
-`model.*`, `ticketing.*`. Enumerated knobs (e.g. `topology ∈ {option_a, option_b, option_c}`,
-`gates.preset ∈ {full_auto, checkpoint, pre_submit_only, paranoid}`) constrain their values.
+`model.*`, `ticketing.*`. Enumerated knobs (e.g. `gates.preset ∈ {full_auto, checkpoint,
+pre_submit_only, paranoid}`) constrain their values. **`topology` is enumerated to `{option_a}`
+only** — the design lists `option_b`/`option_c` as future alternatives, but this implementation
+covers Option A exclusively (see [README §7](README.md#7-out-of-scope-for-this-plan)); the other
+two values are rejected rather than accepted-but-ignored, so misconfiguration fails fast instead of
+silently running Option A under a different label.
 `additionalProperties: false` at each level so **unknown keys are rejected** — the design's fail-fast
 rule. Conditional requirements encoded with `if/then` (e.g. `ticketing.system: jira` requires
 `ticketing.jira.url` and `ticketing.jira.project`).

@@ -1,0 +1,11 @@
+# Exercises gates.add/gates.remove delta semantics, a knob set in all three layers
+# (budget.warn_ratio), and deep-merge of a nested map that only overrides one sibling key
+# (autonomy.designer) while leaving the rest of the map at its default.
+gates:
+  preset: checkpoint
+  add: [G3]
+  remove: [G7]
+autonomy:
+  designer: lean_decide
+budget:
+  warn_ratio: 0.6

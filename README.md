@@ -6,7 +6,8 @@ designer, implementer, code reviewer, documenter, documentation reviewer, submit
 each in its own git worktree, with configurable human gating and a decision journal.
 
 The design document lives at [docs/agent-pipeline-design.md](docs/agent-pipeline-design.md).
-No implementation exists yet.
 
 The staged implementation plan (build order, per-step verification, and technical design for each
-step) lives at [docs/implementation/](docs/implementation/README.md).
+step) lives at [docs/implementation/](docs/implementation/README.md). Implementation is underway;
+[Step 1](docs/implementation/step-01-scaffold-and-config.md) (plugin scaffold and the
+configuration model) is complete — see `config/`, `lib/resolve_config.py`, and `tests/`.
