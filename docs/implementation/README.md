@@ -27,6 +27,16 @@ of deterministic glue. Two design decisions shape the whole build:
   with a typed outcome. This is what lets us build and verify one agent at a time against fixed
   artifact contracts, and what lets a **stub-agent harness** stand in for any not-yet-built stage.
 
+> **Scope: Option A only.** The design doc's [§5 pipeline topology](../agent-pipeline-design.md#5-pipeline-topology)
+> describes three topologies; this plan implements **Option A (strict sequential with rework loops)
+> exclusively**. Option B and Option C are out of scope in full — not "dormant," not "present but
+> inactive": **no file in this repository encodes them**. That means, concretely, for every future
+> step: the `topology` knob's schema enum is `{option_a}` only ([Step 1](step-01-scaffold-and-config.md));
+> `transition_table.yaml` ([Step 2](step-02-orchestrator-core.md)) contains only edges tagged `A` or
+> `[A,B,C]` — it omits `T2b`, `T3b`, `T4c`, and `L6` (the Option B/C-only edges) entirely, with no
+> topology-tag column needed since there is only one topology; and no step's agents, gates, or docs
+> should branch on "if Option B" / "if Option C". See [§7](#7-out-of-scope-for-this-plan) below.
+
 ### Consequences for how we verify
 
 Because routing is LLM-interpreted, "did routing work?" cannot be a pure unit test. We split
@@ -174,7 +184,7 @@ all previously-passing steps still pass (no regression of the walking skeleton).
 | §3 Shared artifacts | contracts fixed in 1–2; each artifact realized by its producer's step |
 | §4 Orchestration, state & persistence | 2 |
 | §4 Worktree placement | 2 |
-| §5 Pipeline topology / transition table | 2 (table as data + validation); Option B/C dormant edges 2 |
+| §5 Pipeline topology / transition table | 2 (table as data + validation), **Option A edges only — see [§7](#7-out-of-scope-for-this-plan)** |
 | §6 Human gating (presets, gates) | 2 (mechanism), 3 (G1/G2), 5 (G4), 6 (G5/G6), 7 (G7), 8 (G8), 9 (GB1), 3/5/8 (GE1/GE2) |
 | §7 Autonomy gradient | 3 (mechanism + refiner/designer), applied per agent thereafter |
 | §8 Decision journal | 3 |
@@ -192,5 +202,23 @@ all previously-passing steps still pass (no regression of the walking skeleton).
 Everything the design marks out of scope for v1 stays out: the deterministic routing engine and
 Mermaid-authored custom graphs ([§13](../agent-pipeline-design.md#13-custom-agent-graphs-future-direction)),
 label-driven ticket intake ([Q6](../agent-pipeline-design.md#q6--can-the-ticket-system-drive-intake-or-only-enrich-it)),
-parallel topologies as the default (Option B/C ship as dormant, knob-selectable data — not the
-tested path), and hardening against untrusted inputs ([§16](../agent-pipeline-design.md#16-permissions-and-sandboxing)).
+and hardening against untrusted inputs ([§16](../agent-pipeline-design.md#16-permissions-and-sandboxing)).
+
+**Option B and Option C topologies are out of scope in full — not deferred, not built dormant.**
+The design doc's [§5](../agent-pipeline-design.md#5-pipeline-topology) presents them as alternative
+topologies and describes a transition table where every edge carries a topology tag so that
+switching topology is meant to eventually be "a knob flip, never a code change." This plan does not
+build toward that: this implementation covers **Option A only**, end to end. Concretely, for every
+step in this plan and every step added later:
+
+- Do not widen the `topology` config-schema enum beyond `{option_a}` ([Step 1](step-01-scaffold-and-config.md)).
+- Do not add the Option B/C-only transition-table edges (`T2b`, `T3b`, `T4c`, `L6`) to
+  `transition_table.yaml`, dormant or otherwise ([Step 2](step-02-orchestrator-core.md)) — the table
+  should contain only edges tagged `A` or `[A,B,C]` in the design's tables.
+- Do not add topology-conditional behavior to any agent, gate, or loop-budget description (e.g. "G4
+  is absent in Option B," "L6 recheck only in Option B") — those design-doc passages describe a
+  topology this build does not implement, so they don't apply here.
+- Do not add fixtures, tests, or docs that exercise Option B or Option C.
+
+If Option B/C support is ever wanted, it is new work built on top of a finished Option A
+implementation, not something to interleave into these steps — revisit this section first.

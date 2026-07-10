@@ -40,11 +40,11 @@ tests/{test_transition_table.py, test_worktree.py, test_state.py}
 ### Transition table as data (`transition_table.yaml`)
 A machine-readable encoding of [§5's normative tables](../agent-pipeline-design.md#transition-table-normative-diagrams-above-are-views-of-this-table):
 `nodes` (id, agent impl, autonomy, consumes/produces artifact types, declarable outcomes) and
-`edges` (id, from, to, trigger, gate, options-tag). All forward (T1–T8), backward (L1–L6), and
-post-PR (L7–L10) edges are present; each edge is tagged with the topologies it belongs to
-(`[A,B,C]`, `A`, `B`, `C`). The active graph = edges whose tag includes the run's `topology` (default
-`option_a`). **Option B/C edges ship here as dormant data** so switching topology stays a knob flip,
-never a code change ([§5 implementation note](../agent-pipeline-design.md#5-pipeline-topology)).
+`edges` (id, from, to, trigger, gate). **Option A only** ([README §7](README.md#7-out-of-scope-for-this-plan)):
+the table contains exactly the edges the design's tables tag `A` or `[A,B,C]` — forward T1–T8,
+backward L1–L5, post-PR L7–L10. The Option B/C-only edges (`T2b`, `T3b`, `T4c`, `L6`) are not
+present, dormant or otherwise; there is no topology-tag column and no runtime topology selection,
+since `option_a` is the only topology this plugin implements.
 
 The orchestrator reads this file into context and routes over it (pure-agent, [Q9](../agent-pipeline-design.md#q9--how-is-the-transition-graph-executed-llm-interpreted-routing-or-a-deterministic-engine)).
 The table is the orchestrator's data alone (P7): stub and real agents never see it.
@@ -127,7 +127,7 @@ to show each pipeline's current node, pending gates, and (from Step 3) pending j
 
 ## Definition of done
 
-- [ ] Table validates; Option A active, Option B/C present but dormant.
+- [ ] Table validates; contains only Option A edges (no Option B/C data of any kind).
 - [ ] Orchestrator drives the full linear spine with stubs and records a correct, append-only history.
 - [ ] All four gate presets behave per §6; passed-through gates logged.
 - [ ] Worktree created and auto-cleaned; state directory persists; artifacts land in the state dir.

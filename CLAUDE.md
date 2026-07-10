@@ -21,3 +21,19 @@ place** as the work evolves — do not stack follow-up commits.
   new one.
 - If the PR for a branch has already been **merged**, treat follow-up work as a fresh change: restart
   the branch from the latest default branch and open a new PR — never reuse merged history.
+
+## Implementation scope: Option A only
+
+`docs/agent-pipeline-design.md` §5 describes three pipeline topologies (Option A/B/C). **This
+implementation covers Option A exclusively.** Option B and Option C are entirely out of scope — not
+deferred, not built dormant, not represented as inactive data. Concretely:
+
+- Never widen the `topology` config knob beyond `option_a` (see `config/config_schema.json`).
+- Never add the Option B/C-only transition-table edges (`T2b`, `T3b`, `T4c`, `L6`) to
+  `transition_table.yaml` or any other file, dormant or otherwise.
+- Never add topology-conditional logic, agents, gates, fixtures, or tests for Option B or Option C.
+- If a design-doc passage describes Option B/C-specific behavior (e.g. "G4 is absent in Option B"),
+  it does not apply to this build — implement only the Option A behavior.
+
+See `docs/implementation/README.md` §7 ("Out of scope for this plan") for the full rationale. This
+applies to every implementation step, not just the one in progress when this was written.

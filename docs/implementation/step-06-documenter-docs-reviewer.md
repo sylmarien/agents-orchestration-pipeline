@@ -17,7 +17,9 @@ the L3 docs-rework loop. Only the submitter (S) remains a stub after this step.
 **In:** `agents/documenter.md`, `agents/documentation_reviewer.md`; `docs_changeset` and
 `docs_review_report` artifacts; gates G5/G6; L3 loop; documenter skip-with-justification; PR-facing
 summary material (consumed by the submitter in Step 7).
-**Out:** the actual PR (Step 7). Option-B parallel docs / L6 recheck edge stay dormant data.
+**Out:** the actual PR (Step 7). Option B's parallel-docs path and the L6 recheck edge are out of
+scope entirely — Option A only ([README §7](README.md#7-out-of-scope-for-this-plan)); no dormant
+data for them is introduced.
 
 ## Deliverables (tree delta)
 
