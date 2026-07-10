@@ -55,8 +55,10 @@ bound is reliable despite pure-agent routing.
 
 ### Routing & gates
 - **G4** (`code_review_signoff`) on T4 (code_reviewer→documenter) — present the `review_report`.
-  Active on the default linear spine and Option C; **absent in Option B** (approval feeds the join
-  gated by G6). Table-driven, so this difference is data.
+  Always present on the Option A spine, the only topology this build implements ([README
+  §7](README.md#7-out-of-scope-for-this-plan)); whether it actually blocks is decided by the run's
+  gate preset like any other gate. The design doc's Option B behavior (G4 absent, approval feeding
+  a join gated by G6) does not apply — this build has no Option B.
 - **L1** (request_changes → implementer): ungated by default; re-enters the implementer with the
   report; the implementer re-greens its inner loop and returns to CR.
 - **L2/L5** (design flaw / design infeasible → designer): **GE1** auto-activates (rework of a
@@ -84,4 +86,4 @@ bound is reliable despite pure-agent routing.
 - [ ] Diff-vs-design and full traceability-chain audit performed; broken link ⇒ blocking.
 - [ ] L1/L2/L5 route correctly; reviewer never edits code.
 - [ ] Loop budgets enforced from state-file counters; exhaustion escalates with both sides' arguments.
-- [ ] GE1 auto-activates on L2/L5; G4 present on the linear spine, dormant for Option B.
+- [ ] GE1 auto-activates on L2/L5; G4 present on the Option A spine.
