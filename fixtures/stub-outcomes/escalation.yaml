@@ -1,0 +1,69 @@
+# Scripted stub outcomes exercising the L5 escalation loop (implementer finds the approved
+# design infeasible, the orchestrator routes back to the designer under gate GE1, then the
+# implementer proceeds once a revised design is ready). designer and implementer each get two
+# scripted visits; every other node is visited once.
+#
+# See tests/test_transition_table.py::test_stub_scenario_is_a_valid_walk, which asserts this
+# scenario traces T1, T2, L5, T2, T3, T4, T5, T6, T7, T8 through config/transition_table.yaml
+# (step-02 Tier-2 "Loops" / escalation coverage).
+scenario: escalation
+
+nodes:
+  refiner:
+    - outcome: spec_ready
+      artifact:
+        type: refined_spec
+        content: "stub refined spec"
+
+  designer:
+    - outcome: design_ready
+      artifact:
+        type: design_doc
+        content: "stub design doc v1"
+    - outcome: design_ready
+      artifact:
+        type: design_doc
+        content: "stub design doc v2 (revised after the implementer's design_infeasible escalation)"
+
+  implementer:
+    - outcome: design_infeasible
+      artifact:
+        type: implementation_notes
+        content: |
+          # Implementation notes (stub)
+          Design infeasible: stub reason for the escalation-loop scenario. Escalating to the
+          designer under gate GE1 rather than guessing around it.
+    - outcome: code_complete
+      artifact:
+        type: diff
+        content: "stub diff (implemented against the revised design)"
+
+  code_reviewer:
+    - outcome: approve
+      artifact:
+        type: review_report
+        content: "stub review report: approve"
+
+  documenter:
+    - outcome: docs_ready
+      artifact:
+        type: docs_changeset
+        content: "stub docs changeset"
+
+  documentation_reviewer:
+    - outcome: approve
+      artifact:
+        type: docs_review_report
+        content: "stub docs review report: approve"
+
+  submitter:
+    - outcome: pr_created
+      artifact:
+        type: pull_request
+        content: "stub PR https://example.invalid/pr/3"
+
+  pr_shepherd:
+    - outcome: pr_terminal
+      artifact:
+        type: pr_status_report
+        content: "stub PR status report: merged"

@@ -1,0 +1,70 @@
+# Scripted stub outcomes: the full linear spine, no rework loops, no escalations (step-02 Tier-2
+# "Happy path" scenario). Read by the generic stub agent (fixtures/stub_agent.md): for a given
+# node id, it pops the next entry off that node's list, writes `artifact.content` to the state
+# directory under the artifact type's name, and returns `outcome` as its typed stage outcome.
+#
+# Each node here is visited exactly once, so each list has exactly one entry. See
+# tests/test_transition_table.py::test_stub_scenario_is_a_valid_walk, which walks this scenario
+# against config/transition_table.yaml and asserts the traversed edges are exactly
+# T1, T2, T3, T4, T5, T6, T7, T8.
+scenario: happy-path
+
+nodes:
+  refiner:
+    - outcome: spec_ready
+      artifact:
+        type: refined_spec
+        content: |
+          # Refined spec (stub)
+          Stub artifact for scripted-outcome routing verification. No real refiner exists yet
+          (Step 3 replaces this stub).
+
+  designer:
+    - outcome: design_ready
+      artifact:
+        type: design_doc
+        content: |
+          # Design doc (stub)
+          Stub artifact. No real designer exists yet (Step 3 replaces this stub).
+
+  implementer:
+    - outcome: code_complete
+      artifact:
+        type: diff
+        content: "stub diff (no real implementer yet -- Step 4 replaces this stub)"
+
+  code_reviewer:
+    - outcome: approve
+      artifact:
+        type: review_report
+        content: |
+          # Review report (stub)
+          Verdict: approve. No real code reviewer exists yet (Step 5 replaces this stub).
+
+  documenter:
+    - outcome: docs_ready
+      artifact:
+        type: docs_changeset
+        content: "stub docs changeset (no real documenter yet -- Step 6 replaces this stub)"
+
+  documentation_reviewer:
+    - outcome: approve
+      artifact:
+        type: docs_review_report
+        content: |
+          # Docs review report (stub)
+          Verdict: approve. No real documentation reviewer exists yet (Step 6 replaces this stub).
+
+  submitter:
+    - outcome: pr_created
+      artifact:
+        type: pull_request
+        content: "stub PR https://example.invalid/pr/1 (no real submitter yet -- Step 7 replaces this stub)"
+
+  pr_shepherd:
+    - outcome: pr_terminal
+      artifact:
+        type: pr_status_report
+        content: |
+          # PR status report (stub)
+          Terminal state: merged. No real pr_shepherd exists yet (Step 8 replaces this stub).
