@@ -1,0 +1,201 @@
+# Transition table (design doc §5) -- the orchestrator's routing data, and only the
+# orchestrator's (P7). Agents named in `from`/`to` never read this file and are unaware of the
+# graph: an agent produces a typed outcome, and the orchestrator matches that outcome against an
+# outgoing edge's `trigger` to pick the next node. graph_validate.py checks this file's
+# well-formedness at plugin build time and at pipeline spawn.
+#
+# Option A only (CLAUDE.md; docs/implementation/README.md §7). This file contains exactly the
+# edges the design doc's §5 tables tag `A` or `[A, B, C]`. The Option B/C-only edges -- T2b, T3b,
+# T4c, L6 -- are not present here, dormant or otherwise, and there is deliberately no
+# topology-tag column: `option_a` is the only topology this plugin implements, so a per-edge tag
+# would be dead weight. graph_validate.py additionally refuses to load a table that contains
+# those ids at all, as a defensive check against ever reintroducing them.
+
+entry_node: refiner
+terminal_node: done
+
+# Artifact types available at intake, i.e. not produced by any pipeline node, so the
+# artifact-closure check treats them as already available before the first node runs.
+#   - user_request: supplied by the human when the pipeline is spawned.
+#   - decision_journal: a running document every agent appends to and reads (design doc §8) --
+#     not the output of any single node in the producer/consumer sense.
+intake_artifacts:
+  - user_request
+  - decision_journal
+
+# Gate id -> human-readable name (design doc §6 gates table). GB1 (budget exhaustion) is
+# deliberately absent: it is not attached to a transition, it can fire "at any point" (Step 9).
+gates:
+  G1: spec_approval
+  G2: design_approval
+  G3: implementation_done
+  G4: code_review_signoff
+  G5: docs_done
+  G6: pre_submit
+  G7: pr_created
+  G8: pr_terminal
+  GE1: design_rework_escalation
+  GE2: spec_rework_escalation
+
+# Nodes: id, the bundled agent that implements it (null for the terminal pseudo-node), its
+# autonomy-gradient level (design doc §7), the artifact types it consumes/produces (design doc
+# §3), and its declarable typed outcomes -- the values an edge's `trigger` may match.
+nodes:
+  - id: refiner
+    agent: refiner
+    autonomy: ask_freely
+    consumes: [user_request]
+    produces: [refined_spec]
+    outcomes: [spec_ready]
+
+  - id: designer
+    agent: designer
+    autonomy: lean_ask
+    consumes: [refined_spec]
+    produces: [design_doc]
+    outcomes: [design_ready, spec_gap]
+
+  - id: implementer
+    agent: implementer
+    autonomy: lean_decide
+    consumes: [design_doc, refined_spec]
+    produces: [diff, implementation_notes, verification_evidence]
+    outcomes: [code_complete, design_infeasible]
+
+  - id: code_reviewer
+    agent: code_reviewer
+    autonomy: decide
+    consumes: [diff, design_doc, refined_spec, implementation_notes]
+    produces: [review_report]
+    outcomes: [approve, request_changes, escalate_design]
+
+  - id: documenter
+    agent: documenter
+    autonomy: decide
+    consumes: [diff, design_doc, refined_spec, implementation_notes]
+    produces: [docs_changeset]
+    outcomes: [docs_ready]
+
+  - id: documentation_reviewer
+    agent: documentation_reviewer
+    autonomy: decide
+    consumes: [docs_changeset, diff, refined_spec]
+    produces: [docs_review_report]
+    outcomes: [approve, request_changes]
+
+  - id: submitter
+    agent: submitter
+    autonomy: full
+    consumes: [diff, docs_changeset, review_report, docs_review_report, decision_journal]
+    produces: [pull_request]
+    outcomes: [pr_created]
+
+  - id: pr_shepherd
+    agent: pr_shepherd
+    autonomy: decide
+    consumes: [pull_request, refined_spec, design_doc, decision_journal]
+    produces: [rework_request, pr_status_report]
+    outcomes: [pr_terminal, ci_failure_or_code_finding, docs_finding, structural_objection, rebase_conflict]
+
+  - id: done
+    agent: null
+    autonomy: null
+    consumes: []
+    produces: []
+    outcomes: []
+
+edges:
+  # Forward spine (design doc §5, Option A column).
+  - id: T1
+    from: refiner
+    to: designer
+    trigger: spec_ready
+    gate: G1
+  - id: T2
+    from: designer
+    to: implementer
+    trigger: design_ready
+    gate: G2
+  - id: T3
+    from: implementer
+    to: code_reviewer
+    trigger: code_complete
+    gate: G3
+  - id: T4
+    from: code_reviewer
+    to: documenter
+    trigger: approve
+    gate: G4
+  - id: T5
+    from: documenter
+    to: documentation_reviewer
+    trigger: docs_ready
+    gate: G5
+  - id: T6
+    from: documentation_reviewer
+    to: submitter
+    trigger: approve
+    gate: G6
+  - id: T7
+    from: submitter
+    to: pr_shepherd
+    trigger: pr_created
+    gate: G7
+  - id: T8
+    from: pr_shepherd
+    to: done
+    trigger: pr_terminal
+    gate: G8
+
+  # Backward edges (rework/escalation). Gateable but ungated by every built-in preset (design
+  # doc §6: "loops are internal quality mechanics, not milestones"); GE1/GE2 auto-activate
+  # regardless of preset per the approval-invalidation rule.
+  - id: L1
+    from: code_reviewer
+    to: implementer
+    trigger: request_changes
+    gate: null
+  - id: L2
+    from: code_reviewer
+    to: designer
+    trigger: escalate_design
+    gate: GE1
+  - id: L3
+    from: documentation_reviewer
+    to: documenter
+    trigger: request_changes
+    gate: null
+  - id: L4
+    from: designer
+    to: refiner
+    trigger: spec_gap
+    gate: GE2
+  - id: L5
+    from: implementer
+    to: designer
+    trigger: design_infeasible
+    gate: GE1
+
+  # Post-PR rework edges: pr_shepherd findings, re-attributed via the orchestrator. Reworked
+  # changes re-enter the normal review path before the submitter amends + force-pushes the PR's
+  # single commit.
+  - id: L7
+    from: pr_shepherd
+    to: implementer
+    trigger: ci_failure_or_code_finding
+    gate: null
+  - id: L8
+    from: pr_shepherd
+    to: documenter
+    trigger: docs_finding
+    gate: null
+  - id: L9
+    from: pr_shepherd
+    to: designer
+    trigger: structural_objection
+    gate: GE1
+  - id: L10
+    from: pr_shepherd
+    to: submitter
+    trigger: rebase_conflict
+    gate: null
