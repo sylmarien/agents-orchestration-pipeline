@@ -22,12 +22,13 @@ with, and never a party that talks to another spoke directly (hub-and-spoke, des
 Read `../docs/agent-pipeline-design.md` for the full rationale behind everything below; this
 file is the operational instructions, not a restatement of the design.
 
-**Scope note (this build, Step 3):** the real refiner and designer now exist
-(`agents/refiner.md`, `agents/designer.md`); implementer .. pr_shepherd still don't — they land
-in Steps 4–8. Until an `agents/<node>.md` file exists for a node, spawn the **stub agent**
-(`fixtures/stub_agent.md`) in its place, per "Spawning a node" below. This lets the full
-routing/gating/state/worktree machinery be exercised end-to-end before every real agent is
-written (the "walking skeleton", now with a strictly longer real prefix each step).
+**Scope note (this build, Step 4):** the real refiner, designer, and implementer now exist
+(`agents/refiner.md`, `agents/designer.md`, `agents/implementer.md`); code_reviewer ..
+pr_shepherd still don't — they land in Steps 5–8. Until an `agents/<node>.md` file exists for a
+node, spawn the **stub agent** (`fixtures/stub_agent.md`) in its place, per "Spawning a node"
+below. This lets the full routing/gating/state/worktree machinery be exercised end-to-end before
+every real agent is written (the "walking skeleton", now with a strictly longer real prefix each
+step).
 
 ## Startup: resolving config, worktree, and state
 
@@ -76,7 +77,13 @@ On being spawned with a task (from `/pipeline:run`, see `skills/run/SKILL.md`):
    In the default linear topology (Option A) there is exactly one active worktree per pipeline
    at any time — pass `agent_id` only if a future topology needs a second concurrent worktree,
    which does not arise here.
-9. **Resume, don't restart, on a crash or a new session for an existing `pipeline_id`.** Call
+9. **Resolve check commands once** (design doc §9 knob registry `checks.build`/`test`/`static`;
+   Step 4): `python3 -c "from lib.checks import resolve_checks; import json; print(json.dumps(resolve_checks('<worktree path>', <resolved config's 'checks' dict>)))"`.
+   Do this once per pipeline, right after the worktree exists (auto-detection reads the checked-
+   out tree), and add the result to the manifest you just wrote as `resolved_checks` — every
+   later spawn of the implementer (including a rework respawn or a crash resume) reuses this same
+   value rather than re-detecting it.
+10. **Resume, don't restart, on a crash or a new session for an existing `pipeline_id`.** Call
    `python3 -m lib.state latest-position '{"state_dir": "<dir>"}'`. `null` means start at the
    table's `entry_node` (`refiner`); otherwise resume by spawning the returned node — its
    per-node state file (`node-state/<node>.json`, if the stage itself wrote one) tells that
@@ -97,11 +104,13 @@ context once per pipeline. Then, until you reach the table's `terminal_node` (`d
    `diff`/`docs_changeset` included, to `artifacts/` as a placeholder file. Read from wherever
    that node's producer actually wrote it.
 2. **Read its typed outcome.** Every node ends its turn with one outcome from its `outcomes`
-   list in the table — never freeform prose you have to interpret. **Exception:** a real agent
-   (Step 3 on) may instead end its turn with `escalation: awaiting_answers` — that is not a
-   routing decision at all, it's the ad-hoc escalation channel; see "Escalations from a spoke"
-   below and handle it *before* re-entering this loop's step 3. Any other unparseable final
-   message is a stage failure (see "Failure handling"), not a routing decision to guess at.
+   list in the table — never freeform prose you have to interpret. **Exceptions:** a real agent
+   (Step 3 on) may instead end its turn with `escalation: awaiting_answers` (the ad-hoc
+   escalation channel; see "Escalations from a spoke" below), or the implementer specifically
+   (Step 4) with `escalation: inner_loop_exhausted` (see "Inner-loop budget exhaustion
+   (implementer)" below) — neither is a routing decision; handle whichever one applies *before*
+   re-entering this loop's step 3. Any other unparseable final message is a stage failure (see
+   "Failure handling"), not a routing decision to guess at.
 3. **Match the outcome to an outgoing edge**: find the edge whose `from` is the current node and
    whose `trigger` equals the outcome. Exactly one must match (graph_validate guarantees this
    for the built-in table). That edge's `id` and `to` are your next transition.
@@ -148,10 +157,14 @@ For the node you're about to spawn:
 - If `agents/<node>.md` exists (a real agent, landed in Steps 3–8), spawn it via the `Task` tool
   with that agent, handing it exactly its declared `consumes` artifacts, `state_dir`,
   `pipeline_id`, `repo_root`, and whatever slice of the resolved config that stage's own contract
-  needs (for the refiner/designer this step: their resolved `autonomy.<node>` level and
-  `escalation_policy` — see `agents/refiner.md`/`agents/designer.md`; later steps add their own,
-  e.g. `loop_limits` for the code reviewer) — and nothing else of your own routing state (it must
-  not see the transition table, other nodes' artifacts, or the gate policy — P7).
+  needs (for the refiner/designer: their resolved `autonomy.<node>` level and
+  `escalation_policy` — see `agents/refiner.md`/`agents/designer.md`; for the implementer (Step
+  4): the manifest's `resolved_checks` (Startup step 9) plus its resolved
+  `implementer.inner_loop.max_iterations` and `implementer.tdd` — see `agents/implementer.md`;
+  later steps add their own, e.g. `loop_limits` for the code reviewer) — and nothing else of your
+  own routing state (it must not see the transition table, other nodes' artifacts, or the gate
+  policy — P7). On a respawn after `inner_loop_exhausted` (see below), also pass whatever revised
+  `max_iterations` the human approved.
 - Otherwise, spawn `fixtures/stub_agent.md` instead, telling it (in the spawn prompt): the node
   id it is playing, the scenario file to read
   (`fixtures/stub-outcomes/<scenario>.yaml` — the scenario is a `run` skill argument, see
@@ -168,7 +181,8 @@ For the node you're about to spawn:
   artifacts (including placeholder `diff`/`docs_changeset` content) into `artifacts/` — see
   point 1 above. Every agent (real or stub) ends its turn with exactly one of its node's declared
   `outcomes` as its final message — except a real agent pausing to escalate, which ends with
-  `escalation: awaiting_answers` instead (see below).
+  `escalation: awaiting_answers` or (the implementer only) `escalation: inner_loop_exhausted`
+  instead (see below).
 
 ## Escalations from a spoke (ad-hoc questions)
 
@@ -222,6 +236,35 @@ Overriding a past decision (at a gate prompt, per step 5 above, or mid-run via
 4. Any node between `rollback_to_node` and where the pipeline currently stood produced artifacts
    that are now stale; you don't need to delete them — the pipeline naturally overwrites them as
    it retraces its steps forward again.
+
+## Inner-loop budget exhaustion (implementer)
+
+The implementer's `implementer.inner_loop.max_iterations` (design doc §2 Implementer, §9 knob
+registry) is a *within-node* iteration cap — distinct from the backward-edge loop budgets in
+routing loop step 4 above (those count bounces across `L1`–`L10`; this counts build/test/fix
+cycles inside a single implementer turn). Exhausting it produces neither `code_complete` nor
+`design_infeasible` — the design may be perfectly fine, the implementer is just out of iterations
+— so it is not a transition-table edge at all: you recognize it the same way as an ad-hoc
+escalation (routing loop step 2's exception), by the spawned implementer's final message being
+`escalation: inner_loop_exhausted` instead of a declared outcome. When you see it:
+
+1. Read what it left for you:
+   `python3 -c "from lib.state import read_node_state; print(read_node_state('<state_dir>', 'implementer'))"`
+   — `last_run_all` (the final build/test/static-check result) and `notes` describe exactly what
+   is still red.
+2. Pending decision-journal entries ride along, as with every other prompt (design doc §8).
+3. Ask the human via `AskUserQuestion`, presenting `last_run_all`'s summary and `notes`: raise
+   `max_iterations` and retry, or abort the pipeline (preserving the worktree per "Failure
+   handling" below). This is a budget exhaustion, not a content question, so there is no batching
+   concern — ask it as soon as you see it.
+4. Append an `escalation` history record (`detail`: "implementer inner-loop budget exhausted after
+   N iterations", plus the human's choice).
+5. If continuing: respawn the implementer fresh (per "Spawning a node" above) with the raised
+   `max_iterations` — its own `node-state/implementer.json` tells it to resume from
+   `last_run_all` rather than restart. If aborting: follow "Failure handling"'s "User aborts" row.
+6. When it finishes, it ends with a normal declared outcome (`code_complete` or
+   `design_infeasible`, or exhausts the new budget again) — re-enter the routing loop at step 3 as
+   usual, or repeat this section.
 
 ## Failure handling (design doc §15)
 

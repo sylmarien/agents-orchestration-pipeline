@@ -16,7 +16,9 @@ worktrees) is also complete — see `agents/orchestrator.md`, `config/transition
 `lib/{graph_validate,worktree,state}.py`, `commands/`, `skills/`, and `fixtures/`.
 [Step 3](docs/implementation/step-03-refiner-designer.md) (refiner + designer, gates G1/G2, the
 decision journal, and the autonomy gradient) is also complete — see `agents/{refiner,designer}.md`,
-`lib/journal.py`, `commands/decisions.md`, `skills/decisions/`, and `fixtures/tasks/`. Real
-pipeline agents from the implementer onward don't exist yet; the orchestrator drives a
+`lib/journal.py`, `commands/decisions.md`, `skills/decisions/`, and `fixtures/tasks/`.
+[Step 4](docs/implementation/step-04-implementer.md) (implementer + inner green loop) is also
+complete — see `agents/implementer.md`, `lib/checks.py`, and `fixtures/sample-project/`. Real
+pipeline agents from the code reviewer onward don't exist yet; the orchestrator drives a
 **stub-agent harness** (`fixtures/stub_agent.md` + `fixtures/stub-outcomes/`) in their place
-until Steps 4–8 replace them one at a time.
+until Steps 5–8 replace them one at a time.
