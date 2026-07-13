@@ -1,0 +1,5 @@
+Checks: >
+  clang-diagnostic-*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters
+WarningsAsErrors: ''
