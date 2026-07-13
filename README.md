@@ -13,7 +13,10 @@ step) lives at [docs/implementation/](docs/implementation/README.md). Implementa
 configuration model) is complete — see `config/`, `lib/resolve_config.py`, and `tests/`.
 [Step 2](docs/implementation/step-02-orchestrator-core.md) (orchestrator core: routing, state,
 worktrees) is also complete — see `agents/orchestrator.md`, `config/transition_table.yaml`,
-`lib/{graph_validate,worktree,state}.py`, `commands/`, `skills/`, and `fixtures/`. Real pipeline
-agents (refiner onward) don't exist yet; the orchestrator drives a **stub-agent harness**
-(`fixtures/stub_agent.md` + `fixtures/stub-outcomes/`) in their place until Steps 3–8 replace
-them one at a time.
+`lib/{graph_validate,worktree,state}.py`, `commands/`, `skills/`, and `fixtures/`.
+[Step 3](docs/implementation/step-03-refiner-designer.md) (refiner + designer, gates G1/G2, the
+decision journal, and the autonomy gradient) is also complete — see `agents/{refiner,designer}.md`,
+`lib/journal.py`, `commands/decisions.md`, `skills/decisions/`, and `fixtures/tasks/`. Real
+pipeline agents from the implementer onward don't exist yet; the orchestrator drives a
+**stub-agent harness** (`fixtures/stub_agent.md` + `fixtures/stub-outcomes/`) in their place
+until Steps 4–8 replace them one at a time.

@@ -22,11 +22,12 @@ with, and never a party that talks to another spoke directly (hub-and-spoke, des
 Read `../docs/agent-pipeline-design.md` for the full rationale behind everything below; this
 file is the operational instructions, not a restatement of the design.
 
-**Scope note (this build, Step 2):** the real per-node agents (refiner .. pr_shepherd) do not
-exist yet — they land in Steps 3–8. Until an `agents/<node>.md` file exists for a node, spawn the
-**stub agent** (`fixtures/stub_agent.md`) in its place, per "Spawning a node" below. This lets
-the full routing/gating/state/worktree machinery be exercised end-to-end before any real agent
-is written (the "walking skeleton").
+**Scope note (this build, Step 3):** the real refiner and designer now exist
+(`agents/refiner.md`, `agents/designer.md`); implementer .. pr_shepherd still don't — they land
+in Steps 4–8. Until an `agents/<node>.md` file exists for a node, spawn the **stub agent**
+(`fixtures/stub_agent.md`) in its place, per "Spawning a node" below. This lets the full
+routing/gating/state/worktree machinery be exercised end-to-end before every real agent is
+written (the "walking skeleton", now with a strictly longer real prefix each step).
 
 ## Startup: resolving config, worktree, and state
 
@@ -96,9 +97,11 @@ context once per pipeline. Then, until you reach the table's `terminal_node` (`d
    `diff`/`docs_changeset` included, to `artifacts/` as a placeholder file. Read from wherever
    that node's producer actually wrote it.
 2. **Read its typed outcome.** Every node ends its turn with one outcome from its `outcomes`
-   list in the table — never freeform prose you have to interpret. If an agent's final message
-   doesn't parse as one of its declared outcomes, that is a stage failure (see "Failure
-   handling"), not a routing decision to guess at.
+   list in the table — never freeform prose you have to interpret. **Exception:** a real agent
+   (Step 3 on) may instead end its turn with `escalation: awaiting_answers` — that is not a
+   routing decision at all, it's the ad-hoc escalation channel; see "Escalations from a spoke"
+   below and handle it *before* re-entering this loop's step 3. Any other unparseable final
+   message is a stage failure (see "Failure handling"), not a routing decision to guess at.
 3. **Match the outcome to an outgoing edge**: find the edge whose `from` is the current node and
    whose `trigger` equals the outcome. Exactly one must match (graph_validate guarantees this
    for the built-in table). That edge's `id` and `to` are your next transition.
@@ -116,11 +119,13 @@ context once per pipeline. Then, until you reach the table's `terminal_node` (`d
    invalidation rule", design doc §6 Overrides) — check this regardless of preset. GB1 (budget
    gate) is not an edge attribute; Step 9 wires its own trigger.
    - **Active:** append a `gate_open` history record, present the bundle — the artifact just
-     produced, all pending decision-journal entries, and the proposed next step (spawn node X) —
-     and wait for the user's approve / revise / override-decision / abort. On approve, append
-     `gate_resolved` and continue. On override-decision, roll back to the stage that made the
-     overridden decision (re-enter the routing loop at that node) and journal what was reused vs.
-     redone. On abort, see "Failure handling".
+     produced, all pending decision-journal entries
+     (`python3 -c "from lib.journal import pending_entries; import json; print(json.dumps(pending_entries('<state_dir>')))"`),
+     and the proposed next step (spawn node X) — and wait for the user's approve / revise /
+     override-decision / abort. On approve, append `gate_resolved` and continue. On
+     override-decision, follow "Handling an override outside a gate" below (the mechanism is the
+     same whether the override arrives at a gate prompt or via `/pipeline:decisions` mid-run). On
+     abort, see "Failure handling".
    - **Inactive:** log it as passed-through anyway (append a `gate_open` + `gate_resolved` pair
      with `detail: "passed-through"`) so the user can audit later, then continue without pausing.
 6. **Append the `transition` history record**
@@ -141,9 +146,12 @@ does not execute it).
 For the node you're about to spawn:
 
 - If `agents/<node>.md` exists (a real agent, landed in Steps 3–8), spawn it via the `Task` tool
-  with that agent, handing it exactly its declared `consumes` artifacts and nothing else of your
-  own routing state (it must not see the transition table, other nodes' artifacts, or the gate
-  policy — P7).
+  with that agent, handing it exactly its declared `consumes` artifacts, `state_dir`,
+  `pipeline_id`, `repo_root`, and whatever slice of the resolved config that stage's own contract
+  needs (for the refiner/designer this step: their resolved `autonomy.<node>` level and
+  `escalation_policy` — see `agents/refiner.md`/`agents/designer.md`; later steps add their own,
+  e.g. `loop_limits` for the code reviewer) — and nothing else of your own routing state (it must
+  not see the transition table, other nodes' artifacts, or the gate policy — P7).
 - Otherwise, spawn `fixtures/stub_agent.md` instead, telling it (in the spawn prompt): the node
   id it is playing, the scenario file to read
   (`fixtures/stub-outcomes/<scenario>.yaml` — the scenario is a `run` skill argument, see
@@ -159,7 +167,61 @@ For the node you're about to spawn:
   artifact into the state directory's `artifacts/` folder; the stub agent writes all of its
   artifacts (including placeholder `diff`/`docs_changeset` content) into `artifacts/` — see
   point 1 above. Every agent (real or stub) ends its turn with exactly one of its node's declared
-  `outcomes` as its final message.
+  `outcomes` as its final message — except a real agent pausing to escalate, which ends with
+  `escalation: awaiting_answers` instead (see below).
+
+## Escalations from a spoke (ad-hoc questions)
+
+A **separate channel from gates** (design doc §7 "Interaction with gating"): the refiner and
+designer (and, from later steps, any other agent whose autonomy level permits it) may pause
+mid-stage with a batched set of questions instead of ending with a normal outcome. You recognize
+this the moment a spawned agent's final message is `escalation: awaiting_answers` rather than one
+of its declared outcomes (routing loop step 2, above). When you see it:
+
+1. Read the batch it left for you:
+   `python3 -c "from lib.state import read_node_state; print(read_node_state('<state_dir>', '<node>'))"`
+   — `pending_questions` is the list to relay.
+2. **Pending decisions ride along with any prompt** (design doc §8 "Presentation"): fetch and show
+   them first, exactly as in the gate-check bundle above, so the user sees outstanding decisions
+   before answering new questions.
+3. Ask the batch via `AskUserQuestion` — one consolidated round-trip, matching how the agent
+   batched it; do not split it into several separate prompts.
+4. Journal each answer once you have it (`agent` is the escalating node, `status: acknowledged` —
+   the human just decided it directly, there is nothing left pending review):
+   ```
+   python3 -c "
+   from lib.journal import append_entry
+   append_entry(state_dir='<state_dir>', pipeline='<pipeline_id>', agent='<node>',
+       stage_artifact='<the artifact type this node produces>', question='<question>',
+       options_considered=[...], chosen='<answer>', rationale='decided by the user (escalation)',
+       reversal_cost='<as the agent assessed it>', status='acknowledged')
+   "
+   ```
+5. Append an `escalation` history record (`detail` naming the node and a short summary) for the
+   audit trail, then **respawn the same node** (fresh Task spawn — do not expect the dead turn to
+   resume itself), handing it its usual inputs plus the answers, keyed by question id, so its
+   prompt contract ("on every spawn, check for a pending escalation") finds them. This is not a
+   `restart` record — nothing crashed; the node is continuing deliberately.
+6. When it finishes, it ends with a normal declared outcome — re-enter the routing loop at step 3
+   as usual.
+
+## Handling an override outside a gate (via `/pipeline:decisions`)
+
+Overriding a past decision (at a gate prompt, per step 5 above, or mid-run via
+`skills/decisions/SKILL.md`) always follows the same mechanism, since both paths call
+`lib.journal.resolve_override` and get back the same `{"entry", "rollback_to_node"}` shape:
+
+1. Append an `escalation` history record (`detail`: which entry was overridden and its redo
+   reason — `resolve_override`'s return value has everything you need).
+2. Append a `restart` history record naming `rollback_to_node` (re-entering a stage the human
+   just invalidated is the same "respawn fresh from declared inputs" operation as a crash
+   restart — see "Failure handling" below — even though nothing crashed).
+3. Re-enter the routing loop at `rollback_to_node`: spawn it fresh (its own per-node state file,
+   if any, reflects its prior work — the agent's own prompt contract decides how much of that is
+   still valid to reuse vs. redo; you do not adjudicate that yourself).
+4. Any node between `rollback_to_node` and where the pipeline currently stood produced artifacts
+   that are now stale; you don't need to delete them — the pipeline naturally overwrites them as
+   it retraces its steps forward again.
 
 ## Failure handling (design doc §15)
 
