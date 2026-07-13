@@ -1,7 +1,7 @@
 ---
 name: status
 description: >-
-  Show running agent-pipeline pipelines: current node, pending gates, and (from Step 3) pending
+  Show running agent-pipeline pipelines: current node, pending gates, and pending
   decision-journal entries, read from each pipeline's state directory.
 ---
 
@@ -25,10 +25,12 @@ resolves a gate, never touches a worktree.
    - `python3 -m lib.state read-history '{"state_dir": "<state_dir>"}'` — scan for the most
      recent `gate_open` record with no matching later `gate_resolved` record on the same gate: an
      unresolved one is a pending gate blocking this pipeline right now.
+   - `python3 -c "from lib.journal import pending_entries; import json; print(json.dumps(pending_entries('<state_dir>')))"`
+     for this pipeline's pending decision-journal entries (design doc §8).
 3. Present, per pipeline: `pipeline_id`, current node, whether it's paused on a gate (and which),
-   and the resolved gate preset. Pending decision-journal entries are not yet produced by
-   anything in this build (the journal lands in Step 3) — omit that section until then rather
-   than fabricating it.
+   the resolved gate preset, and the count (and, if few, the questions) of pending decision-
+   journal entries. Resolving a pending entry (acknowledge or override) is not this skill's job —
+   point the user at `/pipeline:decisions`.
 
 ## What this skill does not do
 
