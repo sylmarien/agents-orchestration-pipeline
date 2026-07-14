@@ -22,13 +22,13 @@ with, and never a party that talks to another spoke directly (hub-and-spoke, des
 Read `../docs/agent-pipeline-design.md` for the full rationale behind everything below; this
 file is the operational instructions, not a restatement of the design.
 
-**Scope note (this build, Step 4):** the real refiner, designer, and implementer now exist
-(`agents/refiner.md`, `agents/designer.md`, `agents/implementer.md`); code_reviewer ..
-pr_shepherd still don't — they land in Steps 5–8. Until an `agents/<node>.md` file exists for a
-node, spawn the **stub agent** (`fixtures/stub_agent.md`) in its place, per "Spawning a node"
-below. This lets the full routing/gating/state/worktree machinery be exercised end-to-end before
-every real agent is written (the "walking skeleton", now with a strictly longer real prefix each
-step).
+**Scope note (this build, Step 5):** the real refiner, designer, implementer, and code_reviewer
+now exist (`agents/refiner.md`, `agents/designer.md`, `agents/implementer.md`,
+`agents/code_reviewer.md`); documenter .. pr_shepherd still don't — they land in Steps 6–8. Until
+an `agents/<node>.md` file exists for a node, spawn the **stub agent** (`fixtures/stub_agent.md`)
+in its place, per "Spawning a node" below. This lets the full routing/gating/state/worktree
+machinery be exercised end-to-end before every real agent is written (the "walking skeleton", now
+with a strictly longer real prefix each step).
 
 ## Startup: resolving config, worktree, and state
 
@@ -76,7 +76,12 @@ On being spawned with a task (from `/pipeline:run`, see `skills/run/SKILL.md`):
    ```
    In the default linear topology (Option A) there is exactly one active worktree per pipeline
    at any time — pass `agent_id` only if a future topology needs a second concurrent worktree,
-   which does not arise here.
+   which does not arise here. Before creating it, capture the fork point:
+   `git -C <repo_root> rev-parse HEAD` (the `base_ref` the worktree is created from). Add it to
+   the manifest as `base_commit` (read-modify-write the manifest you wrote in step 7, same pattern
+   as `resolved_checks` in step 9 below) — this is what lets the code reviewer (Step 5) and later
+   stages read "the diff" as `git diff <base_commit>..HEAD` without ever seeing your routing
+   state.
 9. **Resolve check commands once** (design doc §9 knob registry `checks.build`/`test`/`static`;
    Step 4): `python3 -c "from lib.checks import resolve_checks; import json; print(json.dumps(resolve_checks('<worktree path>', <resolved config's 'checks' dict>)))"`.
    Do this once per pipeline, right after the worktree exists (auto-detection reads the checked-
@@ -114,14 +119,17 @@ context once per pipeline. Then, until you reach the table's `terminal_node` (`d
 3. **Match the outcome to an outgoing edge**: find the edge whose `from` is the current node and
    whose `trigger` equals the outcome. Exactly one must match (graph_validate guarantees this
    for the built-in table). That edge's `id` and `to` are your next transition.
-4. **Backward edge? Increment its loop-budget counter first**:
-   `python3 -m lib.state increment-loop-counter` is not a CLI verb either — call it via
-   `python3 -c "from lib.state import increment_loop_counter; print(increment_loop_counter(<state_dir>, '<edge_id>'))"`.
-   Compare the returned count against the resolved `loop_limits` knob for that edge's budget
-   class (L1→`loop_limits.l1`, L3→`loop_limits.l3`, L2/L4/L5→`loop_limits.escalations`,
-   L7–L10→`loop_limits.post_pr`). Exceeding it means: stop looping, escalate to the human with
-   both sides' arguments (the two most recent conflicting outcomes at that edge), and let them
-   pick a direction or abort (design doc §5 "Loop budgets", §15).
+4. **Backward edge? Check its loop budget first** (Step 5, design doc §5 "Loop budgets"):
+   ```
+   python3 -c "from lib.loop_budget import record_bounce; import json; print(json.dumps(record_bounce('<state_dir>', '<edge_id>', <resolved loop_limits dict>)))"
+   ```
+   This increments the edge's bounce counter, persists it, and appends the `loop_increment`
+   history record for you (it wraps `lib.state.increment_loop_counter`), then compares the new
+   count against the right `loop_limits.*` knob for that edge's budget class
+   (`lib.loop_budget.EDGE_BUDGET_CLASS`: L1→`l1`, L3→`l3`, L2/L4/L5→`escalations`,
+   L7–L10→`post_pr`). If the result's `exceeded` is `true`: stop looping this edge, escalate to
+   the human with both sides' arguments (the two most recent conflicting outcomes at that edge),
+   and let them pick a direction or abort (design doc §15).
 5. **Gate check.** Is the edge's `gate` active under the run's resolved gate policy (preset,
    plus `gates.add`/`gates.remove`)? Escalation gates GE1/GE2 are additionally always active when
    the loop they guard would discard work already approved at an earlier gate (the "approval
@@ -158,13 +166,15 @@ For the node you're about to spawn:
   with that agent, handing it exactly its declared `consumes` artifacts, `state_dir`,
   `pipeline_id`, `repo_root`, and whatever slice of the resolved config that stage's own contract
   needs (for the refiner/designer: their resolved `autonomy.<node>` level and
-  `escalation_policy` — see `agents/refiner.md`/`agents/designer.md`; for the implementer (Step
-  4): the manifest's `resolved_checks` (Startup step 9) plus its resolved
+  `escalation_policy` — see `agents/refiner.md`/`agents/designer.md`; for the implementer: the
+  manifest's `resolved_checks` (Startup step 9) plus its resolved
   `implementer.inner_loop.max_iterations` and `implementer.tdd` — see `agents/implementer.md`;
-  later steps add their own, e.g. `loop_limits` for the code reviewer) — and nothing else of your
-  own routing state (it must not see the transition table, other nodes' artifacts, or the gate
-  policy — P7). On a respawn after `inner_loop_exhausted` (see below), also pass whatever revised
-  `max_iterations` the human approved.
+  for the code reviewer (Step 5): the manifest's `base_commit` (Startup step 8, so it can read
+  the diff itself) and `resolved_checks` (Startup step 9, so it can re-run checks) — see
+  `agents/code_reviewer.md`; later steps add their own) — and nothing else of your own routing
+  state (it must not see the transition table, other nodes' artifacts, your loop-budget counters,
+  or the gate policy — P7). On a respawn after `inner_loop_exhausted` (see below), also pass
+  whatever revised `max_iterations` the human approved.
 - Otherwise, spawn `fixtures/stub_agent.md` instead, telling it (in the spawn prompt): the node
   id it is playing, the scenario file to read
   (`fixtures/stub-outcomes/<scenario>.yaml` — the scenario is a `run` skill argument, see

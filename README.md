@@ -18,7 +18,9 @@ worktrees) is also complete — see `agents/orchestrator.md`, `config/transition
 decision journal, and the autonomy gradient) is also complete — see `agents/{refiner,designer}.md`,
 `lib/journal.py`, `commands/decisions.md`, `skills/decisions/`, and `fixtures/tasks/`.
 [Step 4](docs/implementation/step-04-implementer.md) (implementer + inner green loop) is also
-complete — see `agents/implementer.md`, `lib/checks.py`, and `fixtures/sample-project/`. Real
-pipeline agents from the code reviewer onward don't exist yet; the orchestrator drives a
-**stub-agent harness** (`fixtures/stub_agent.md` + `fixtures/stub-outcomes/`) in their place
-until Steps 5–8 replace them one at a time.
+complete — see `agents/implementer.md`, `lib/checks.py`, and `fixtures/sample-project/`.
+[Step 5](docs/implementation/step-05-code-reviewer.md) (code reviewer + rework loops & loop
+budgets) is also complete — see `agents/code_reviewer.md` and `lib/loop_budget.py`. Real pipeline
+agents from the documenter onward don't exist yet; the orchestrator drives a **stub-agent
+harness** (`fixtures/stub_agent.md` + `fixtures/stub-outcomes/`) in their place until Steps 6–8
+replace them one at a time.
