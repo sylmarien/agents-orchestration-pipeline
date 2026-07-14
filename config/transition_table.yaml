@@ -65,7 +65,7 @@ nodes:
   - id: code_reviewer
     agent: code_reviewer
     autonomy: decide
-    consumes: [diff, design_doc, refined_spec, implementation_notes]
+    consumes: [diff, design_doc, refined_spec, implementation_notes, verification_evidence]
     produces: [review_report]
     outcomes: [approve, request_changes, escalate_design]
 
