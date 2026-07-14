@@ -22,13 +22,14 @@ with, and never a party that talks to another spoke directly (hub-and-spoke, des
 Read `../docs/agent-pipeline-design.md` for the full rationale behind everything below; this
 file is the operational instructions, not a restatement of the design.
 
-**Scope note (this build, Step 5):** the real refiner, designer, implementer, and code_reviewer
-now exist (`agents/refiner.md`, `agents/designer.md`, `agents/implementer.md`,
-`agents/code_reviewer.md`); documenter .. pr_shepherd still don't — they land in Steps 6–8. Until
-an `agents/<node>.md` file exists for a node, spawn the **stub agent** (`fixtures/stub_agent.md`)
-in its place, per "Spawning a node" below. This lets the full routing/gating/state/worktree
-machinery be exercised end-to-end before every real agent is written (the "walking skeleton", now
-with a strictly longer real prefix each step).
+**Scope note (this build, Step 6):** the real refiner, designer, implementer, code_reviewer,
+documenter, and documentation_reviewer now exist (`agents/refiner.md`, `agents/designer.md`,
+`agents/implementer.md`, `agents/code_reviewer.md`, `agents/documenter.md`,
+`agents/documentation_reviewer.md`); submitter and pr_shepherd still don't — they land in Steps
+7–8. Until an `agents/<node>.md` file exists for a node, spawn the **stub agent**
+(`fixtures/stub_agent.md`) in its place, per "Spawning a node" below. This lets the full
+routing/gating/state/worktree machinery be exercised end-to-end before every real agent is
+written (the "walking skeleton", now with a strictly longer real prefix each step).
 
 ## Startup: resolving config, worktree, and state
 
@@ -171,10 +172,20 @@ For the node you're about to spawn:
   `implementer.inner_loop.max_iterations` and `implementer.tdd` — see `agents/implementer.md`;
   for the code reviewer (Step 5): the manifest's `base_commit` (Startup step 8, so it can read
   the diff itself) and `resolved_checks` (Startup step 9, so it can re-run checks) — see
-  `agents/code_reviewer.md`; later steps add their own) — and nothing else of your own routing
-  state (it must not see the transition table, other nodes' artifacts, your loop-budget counters,
-  or the gate policy — P7). On a respawn after `inner_loop_exhausted` (see below), also pass
-  whatever revised `max_iterations` the human approved.
+  `agents/code_reviewer.md`; for the documenter (Step 6): `base_commit`, `pre_docs_commit` (see
+  below), and its resolved `documenter.skip_allowed` — see `agents/documenter.md`; for the
+  documentation reviewer (Step 6): `base_commit` and `pre_docs_commit` only — it slices `diff` and
+  `docs_changeset` out of the worktree's history itself — see `agents/documentation_reviewer.md`;
+  later steps add their own) — and nothing else of your own routing state (it must not see the
+  transition table, other nodes' artifacts, your loop-budget counters, or the gate policy — P7).
+  On a respawn after `inner_loop_exhausted` (see below), also pass whatever revised
+  `max_iterations` the human approved. The first time you're about to spawn the documenter for a
+  given pipeline (never on a later `L3` respawn — those add more docs commits on top of the same
+  baseline), first capture `pre_docs_commit`: `git -C <repo_root> rev-parse HEAD`, recorded in the
+  manifest (same read-modify-write pattern as `base_commit`/`resolved_checks`). This is what lets
+  the documentation reviewer read `diff` as `<base_commit>..<pre_docs_commit>` (already
+  code-reviewed) and `docs_changeset` as `<pre_docs_commit>..HEAD` (the documenter's own commits)
+  without either of them seeing your routing state.
 - Otherwise, spawn `fixtures/stub_agent.md` instead, telling it (in the spawn prompt): the node
   id it is playing, the scenario file to read
   (`fixtures/stub-outcomes/<scenario>.yaml` — the scenario is a `run` skill argument, see

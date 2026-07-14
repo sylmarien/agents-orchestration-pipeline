@@ -20,7 +20,9 @@ decision journal, and the autonomy gradient) is also complete — see `agents/{r
 [Step 4](docs/implementation/step-04-implementer.md) (implementer + inner green loop) is also
 complete — see `agents/implementer.md`, `lib/checks.py`, and `fixtures/sample-project/`.
 [Step 5](docs/implementation/step-05-code-reviewer.md) (code reviewer + rework loops & loop
-budgets) is also complete — see `agents/code_reviewer.md` and `lib/loop_budget.py`. Real pipeline
-agents from the documenter onward don't exist yet; the orchestrator drives a **stub-agent
-harness** (`fixtures/stub_agent.md` + `fixtures/stub-outcomes/`) in their place until Steps 6–8
-replace them one at a time.
+budgets) is also complete — see `agents/code_reviewer.md` and `lib/loop_budget.py`.
+[Step 6](docs/implementation/step-06-documenter-docs-reviewer.md) (documenter + documentation
+reviewer, gates G5/G6, the L3 docs-rework loop) is also complete — see `agents/documenter.md` and
+`agents/documentation_reviewer.md`. Real pipeline agents from the submitter onward don't exist
+yet; the orchestrator drives a **stub-agent harness** (`fixtures/stub_agent.md` +
+`fixtures/stub-outcomes/`) in their place until Steps 7–8 replace them one at a time.
