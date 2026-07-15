@@ -23,6 +23,9 @@ complete — see `agents/implementer.md`, `lib/checks.py`, and `fixtures/sample-
 budgets) is also complete — see `agents/code_reviewer.md` and `lib/loop_budget.py`.
 [Step 6](docs/implementation/step-06-documenter-docs-reviewer.md) (documenter + documentation
 reviewer, gates G5/G6, the L3 docs-rework loop) is also complete — see `agents/documenter.md` and
-`agents/documentation_reviewer.md`. Real pipeline agents from the submitter onward don't exist
-yet; the orchestrator drives a **stub-agent harness** (`fixtures/stub_agent.md` +
-`fixtures/stub-outcomes/`) in their place until Steps 7–8 replace them one at a time.
+`agents/documentation_reviewer.md`.
+[Step 7](docs/implementation/step-07-submitter.md) (submitter + permissions/sandboxing) is also
+complete — see `agents/submitter.md` and `hooks/sandbox_guard.py`. The real linear spine now runs
+end-to-end from the refiner through a live PR (G7). Only the pr_shepherd doesn't exist yet; the
+orchestrator drives the **stub-agent harness** (`fixtures/stub_agent.md` +
+`fixtures/stub-outcomes/`) in its place until Step 8 replaces it.
