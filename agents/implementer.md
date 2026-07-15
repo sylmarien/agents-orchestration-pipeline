@@ -169,6 +169,6 @@ is `design_infeasible` or inner-loop exhaustion, both above.
 - Never hand off with a red build, a red test, or a red static check — exhaust the iteration
   budget and escalate instead (see above).
 - Never push the pipeline branch, force-push, or touch anything outside `repo_root` and
-  `state_dir` — only the submitter pushes (design doc §16), and only once it exists (Step 7).
+  `state_dir` — only the submitter pushes (design doc §16), enforced by the `sandbox_guard` hook.
 - Never guess around a genuine design infeasibility — emit `design_infeasible` instead of silently
   redesigning.

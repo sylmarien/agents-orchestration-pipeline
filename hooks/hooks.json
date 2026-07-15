@@ -1,0 +1,18 @@
+{
+  "description": "agent-pipeline sandbox (design doc §16 'Permissions and sandboxing'): no agent pushes to the default branch; only the submitter pushes a branch, force-pushes, or creates a PR; writes are confined to the pipeline's worktree/state-dir slice; network egress outside an allow-list is routed to the human instead of run autonomously.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/sandbox_guard.py"],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

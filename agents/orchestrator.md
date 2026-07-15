@@ -22,11 +22,11 @@ with, and never a party that talks to another spoke directly (hub-and-spoke, des
 Read `../docs/agent-pipeline-design.md` for the full rationale behind everything below; this
 file is the operational instructions, not a restatement of the design.
 
-**Scope note (this build, Step 6):** the real refiner, designer, implementer, code_reviewer,
-documenter, and documentation_reviewer now exist (`agents/refiner.md`, `agents/designer.md`,
-`agents/implementer.md`, `agents/code_reviewer.md`, `agents/documenter.md`,
-`agents/documentation_reviewer.md`); submitter and pr_shepherd still don't — they land in Steps
-7–8. Until an `agents/<node>.md` file exists for a node, spawn the **stub agent**
+**Scope note (this build, Step 7):** the real refiner, designer, implementer, code_reviewer,
+documenter, documentation_reviewer, and submitter now exist (`agents/refiner.md`,
+`agents/designer.md`, `agents/implementer.md`, `agents/code_reviewer.md`, `agents/documenter.md`,
+`agents/documentation_reviewer.md`, `agents/submitter.md`); pr_shepherd still doesn't — it lands
+in Step 8. Until an `agents/<node>.md` file exists for a node, spawn the **stub agent**
 (`fixtures/stub_agent.md`) in its place, per "Spawning a node" below. This lets the full
 routing/gating/state/worktree machinery be exercised end-to-end before every real agent is
 written (the "walking skeleton", now with a strictly longer real prefix each step).
@@ -152,7 +152,7 @@ context once per pipeline. Then, until you reach the table's `terminal_node` (`d
 7. If `edge.to` is `done`: **auto-clean the worktree**
    (`python3 -m lib.worktree remove '{"repo_root": "<abs path>", "path": "<worktree path>"}'`) —
    the state directory is *not* deleted; it persists per design doc §4. Report the final
-   outcome to the user: PR link (once the submitter exists), decision journal, residual risks.
+   outcome to the user: PR link, decision journal, residual risks.
 
 Drive this loop by **reasoning over the table as data**, not by hard-coded per-node control
 flow (design doc Q9: v1 is pure-agent / LLM-interpreted routing — there is no separate routing
@@ -176,7 +176,11 @@ For the node you're about to spawn:
   below), and its resolved `documenter.skip_allowed` — see `agents/documenter.md`; for the
   documentation reviewer (Step 6): `base_commit` and `pre_docs_commit` only — it slices `diff` and
   `docs_changeset` out of the worktree's history itself — see `agents/documentation_reviewer.md`;
-  later steps add their own) — and nothing else of your own routing state (it must not see the
+  for the submitter (Step 7): `base_commit`, `pre_docs_commit` (same slicing use as the
+  documentation reviewer), the manifest's `resolved_checks` (so it can re-verify after its own
+  rebase), and its resolved `submitter.single_commit` and `decision_journal.in_pr_body` — see
+  `agents/submitter.md`; later steps add their own) — and nothing else of your own routing state
+  (it must not see the
   transition table, other nodes' artifacts, your loop-budget counters, or the gate policy — P7).
   On a respawn after `inner_loop_exhausted` (see below), also pass whatever revised
   `max_iterations` the human approved. The first time you're about to spawn the documenter for a
@@ -303,4 +307,4 @@ escalation (routing loop step 2's exception), by the spawned implementer's final
 - Never let a spawned agent see the transition table, another agent's artifacts beyond what its
   `consumes` list names, or your gate/budget bookkeeping.
 - Never push to the default branch, push any branch, or create a PR yourself — only the
-  submitter does that (design doc §16), and only once it exists (Step 7).
+  submitter does that (design doc §16), enforced by the `sandbox_guard` hook.
