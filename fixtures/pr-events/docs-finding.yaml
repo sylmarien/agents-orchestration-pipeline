@@ -1,0 +1,21 @@
+# Scripted PR-activity event: a review comment identifying stale/incorrect documentation for the
+# shipped diff (step-08 Tier-2 "Docs finding on the PR"). Exercises L8.
+#
+# Expected triage:
+#   classification: actionable (a real docs gap, grounded in the diff, not a request for more
+#                   detail than the diff's surface warrants)
+#   outcome:        docs_finding
+#   rework_request: proposed_owner: documenter, severity: advisory
+#   routes via:     L8 (pr_shepherd -> documenter), ungated, shared `post_pr` loop budget
+#   downstream:     documenter updates docs -> T5 -> documentation_reviewer -> T6 -> submitter
+#                   (amends + force-pushes) -> T7 -> pr_shepherd again
+
+scenario: docs-finding
+
+events:
+  - id: evt-docs-1
+    type: review_comment
+    author: reviewer1
+    body: |
+      README.md still documents `intstack_push` as returning `void`, but this PR changed it to
+      return an `int` status code on overflow. The doc wasn't updated to match.

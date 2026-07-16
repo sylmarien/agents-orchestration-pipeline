@@ -1,0 +1,27 @@
+# Scripted PR-activity event: a single failing CI run on an already-open PR (step-08 Tier-2
+# "CI failure"). Read by `agents/pr_shepherd.md` itself as its subscription source (step 1 —
+# "Fixture-driven verification runs"; see `agents/orchestrator.md` "Watching the PR (pr_shepherd)")
+# — this scenario has exactly one event, so pr_shepherd's one watch-session spawn should triage it
+# and route it via L7 in the same turn.
+#
+# Expected triage (not machine-checked — pr_shepherd's judgement is LLM-interpreted, design doc
+# Q9 — this documents what a Tier-2 verification run should observe):
+#   classification: actionable (a real, current CI failure, not a flake already retried green)
+#   outcome:        ci_failure_or_code_finding
+#   rework_request: proposed_owner: implementer, severity: blocking
+#   routes via:     L7 (pr_shepherd -> implementer), ungated, shared `post_pr` loop budget
+#   downstream:     implementer fixes -> T3 -> code_reviewer -> T4 -> documenter -> T5 ->
+#                   documentation_reviewer -> T6 -> submitter (amends + force-pushes, see
+#                   "Rework respawn" in agents/submitter.md) -> T7 -> pr_shepherd again
+
+scenario: ci-failure
+
+events:
+  - id: evt-ci-1
+    type: ci_run
+    check_name: test
+    conclusion: failure
+    detail: |
+      Job "test" failed on the latest commit: `test_intstack_push_pop` regressed —
+      `intstack_pop` returns the wrong value after three pushes. This is a real failure against
+      the current HEAD, not a rerun of a check that already passed.

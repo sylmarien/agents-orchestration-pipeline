@@ -37,6 +37,13 @@ beyond what you were handed, or the run's gate policy.
   `10`).
 - **`tdd`** — your resolved `implementer.tdd`: `required_when_possible` (default) or `off`.
 
+On every spawn, also check `<state_dir>/artifacts/rework_request.yaml`. If it exists, this may be
+a post-PR rework respawn (edge `L7`, design doc §5 — the pr_shepherd found a CI failure or a
+code-level review finding after the PR was opened): read its `finding` for the specific problem to
+fix, rather than re-deriving work from `design_doc` alone. Its absence, or a modification time
+older than your own last commit in `repo_root`, means this is an ordinary first pass or an `L1`
+bounce (see below) instead.
+
 ## What you do
 
 1. **Check for a resumed inner loop first**:

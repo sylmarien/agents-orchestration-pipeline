@@ -1,0 +1,24 @@
+# Scripted PR-activity event: the PR has drifted out of date with the default branch, with no
+# content finding attached (step-08 Tier-2 "Rebase/conflict"). Exercises L10.
+#
+# Expected triage:
+#   classification: actionable (mergeability alone, nothing about the diff's content is in
+#                   question)
+#   outcome:        rebase_conflict
+#   rework_request: proposed_owner: submitter, severity: blocking
+#   routes via:     L10 (pr_shepherd -> submitter), ungated, shared `post_pr` loop budget
+#   downstream:     submitter re-runs its normal "What you do" (fetch/rebase/squash/re-verify),
+#                   this time as a rework respawn (see "Rework respawn: amending instead of
+#                   creating" in agents/submitter.md) — force-pushes the re-based single commit,
+#                   no code/docs change involved -> T7 -> pr_shepherd again
+
+scenario: rebase-conflict
+
+events:
+  - id: evt-mergeability-1
+    type: mergeability
+    mergeable_state: dirty
+    detail: |
+      GitHub reports this PR can no longer be merged automatically: the default branch has moved
+      and now conflicts with this PR's single commit. No review comment accompanies this — it is
+      a pure mergeability-state change.

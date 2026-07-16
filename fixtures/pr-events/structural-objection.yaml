@@ -1,0 +1,32 @@
+# Scripted PR-activity event: a review comment arguing the design itself is wrong, not just its
+# implementation (step-08 Tier-2 "Structural objection"). Exercises L9 and its GE1 auto-activation.
+#
+# Expected triage:
+#   classification: actionable — this is the same class of problem as the code reviewer's own
+#                   `escalate_design` (L2) or the implementer's `design_infeasible` (L5), just
+#                   surfaced after the PR was already opened; a docs or code patch on top of the
+#                   current design cannot resolve it.
+#   outcome:        structural_objection
+#   rework_request: proposed_owner: designer, severity: blocking
+#   routes via:     L9 (pr_shepherd -> designer). GE1 auto-activates regardless of the run's gate
+#                   preset (design doc §6 approval-invalidation rule — G2 already approved the
+#                   design this finding invalidates), so the orchestrator pauses for human
+#                   approval here even under `full_auto`.
+#   downstream:     designer revises design_doc -> T2 -> implementer -> T3 -> code_reviewer ->
+#                   T4 -> documenter -> T5 -> documentation_reviewer -> T6 -> submitter (amends +
+#                   force-pushes) -> T7 -> pr_shepherd again
+
+scenario: structural-objection
+
+events:
+  - id: evt-struct-1
+    type: review
+    author: reviewer2
+    state: changes_requested
+    body: |
+      This whole approach grows the stack's backing array by doubling on every push, which is
+      fine for the stated use case, but the design doc committed to O(1) amortized push *and*
+      bounded peak memory for a fixed-capacity embedded target — those two constraints are in
+      tension with unbounded doubling. This needs a different growth/capacity strategy, not a
+      tweak to the current one; implementing around it further would just be patching a design
+      that doesn't fit the stated constraints.

@@ -1,0 +1,18 @@
+# Scripted PR-activity event: the PR is merged (step-08 Tier-2 "Terminal"). Exercises T8/G8.
+#
+# Expected triage:
+#   classification: actionable — terminal
+#   pr_status_report: updated with the terminal state (merged)
+#   outcome:          pr_terminal
+#   routes via:       T8 (pr_shepherd -> done), gate G8 (notification-only — design doc §6)
+#   downstream:       agents/orchestrator.md routing loop step 7 auto-cleans the worktree; the
+#                     state directory persists (design doc §4); pr_shepherd is not respawned again
+#                     (its own subscription simply ends with its turn) and the orchestrator reports
+#                     the final outcome — PR link, decision journal, residual risks.
+
+scenario: terminal-merged
+
+events:
+  - id: evt-terminal-1
+    type: merged
+    detail: "PR merged into the default branch."
