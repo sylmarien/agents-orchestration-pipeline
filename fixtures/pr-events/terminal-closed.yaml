@@ -1,0 +1,10 @@
+# Scripted PR-activity event: the PR is closed without merging (step-08 Tier-2 "Terminal" — the
+# other terminal state alongside terminal-merged.yaml). Exercises T8/G8 identically; the only
+# difference is the terminal state recorded in `pr_status_report`.
+
+scenario: terminal-closed
+
+events:
+  - id: evt-terminal-2
+    type: closed
+    detail: "PR closed without merging."

@@ -26,12 +26,12 @@ more running pipelines.
      `{preset: full_auto, add: [G2]}`, per design doc §6 Overrides table; check command
      overrides; budget/model overrides; etc.) — anything not named in prose stays unset, so it
      resolves from the project config or built-in defaults;
-   - **(this build only, Step 2)** an optional stub scenario reference — if the user's invocation
-     names one (e.g. `--stub review-bounce`) or a project has no real agents built yet for a
-     node the pipeline reaches, use `fixtures/stub-outcomes/<scenario>.yaml` (default
-     `happy-path`) per `agents/orchestrator.md`'s "Spawning a node" section. This flag does not
-     exist in the shipped (post-Step-11) plugin and must never be presented to the user as a
-     real feature — it is purely how this walking skeleton is exercised before Steps 3–8 land.
+   - an optional stub scenario reference (`--stub <scenario>`, e.g. `--stub review-bounce`) — every
+     node has a real agent as of Step 8, so this exists purely to drive the routing/gating/state/
+     worktree machinery deterministically against `fixtures/stub-outcomes/<scenario>.yaml` for
+     testing, per `agents/orchestrator.md`'s "Spawning a node" section, not to fill a gap in the
+     roster. This flag does not exist in the shipped (post-Step-11) plugin and must never be
+     presented to the user as a real feature.
 3. **Hand off to the orchestrator's startup sequence** (`agents/orchestrator.md` §"Startup:
    resolving config, worktree, and state") with the parsed task(s) and prompt delta.
 

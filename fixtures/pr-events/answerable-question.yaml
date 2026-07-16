@@ -1,0 +1,26 @@
+# Scripted PR-activity event: a reviewer question the existing artifacts already answer
+# (step-08 Tier-2 "Answerable question"). Exercises the informational/reply path — no rework, no
+# transition.
+#
+# Expected triage:
+#   classification: informational (answerable from refined_spec/design_doc/decision_journal,
+#                   without touching code)
+#   action:         pr_shepherd posts a reply grounded in that material (host-specific mechanism,
+#                   same delegation as the submitter's PR creation — design doc §16)
+#   journal:        triaged and journaled (not a silent skip — only true duplicates are silent)
+#   final signal:   `watch: continue` — not one of pr_shepherd's declared outcomes; no
+#                   transition-table edge fires, no history `transition` record is appended
+
+scenario: answerable-question
+
+events:
+  - id: evt-question-1
+    type: review_comment
+    author: reviewer3
+    body: |
+      Why does `intstack_push` return an error code instead of just asserting on overflow? Was
+      an unbounded stack considered?
+    # A Tier-2 run should confirm design_doc/refined_spec already record this decision (bounded
+    # capacity was an explicit acceptance criterion; asserting would crash a caller that can
+    # legitimately hit the bound) — pr_shepherd should quote/paraphrase that rationale in its
+    # reply rather than re-deriving a new justification from the diff.

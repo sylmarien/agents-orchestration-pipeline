@@ -1,0 +1,42 @@
+# Scripted PR-activity events: five consecutive CI-failure rounds against the same finding, none
+# of which pr_shepherd itself flags as a "repeat" (each looks like ordinary post-fix drift, not an
+# obviously-recurring defect — contrast with repeat-finding.yaml, where pr_shepherd's own judgement
+# catches the repeat before the count matters) — step-08 Tier-2 "Budget: the same finding surviving
+# 5 rounds ... escalates". Exercises the orchestrator's generic `loop_limits.post_pr` mechanism
+# (`lib.loop_budget`, default 5), independent of pr_shepherd's own reasoning.
+#
+# A Tier-2 run drives all five events in order, each followed by a full L7 rework round (not
+# scripted here — only pr_shepherd's own turns are). Expect pr_shepherd to emit
+# `ci_failure_or_code_finding` all five times (it has no reason to call any single one a repeat in
+# isolation); the orchestrator's routing loop step 4 (`record_bounce`) is what trips on the 5th
+# `L7` traversal (`exceeded: true`) and escalates to the human with both sides' arguments, per
+# design doc §15 — not pr_shepherd's own ad-hoc escalation channel.
+
+scenario: ci-failure-budget-exhaustion
+
+events:
+  - id: evt-budget-1
+    type: ci_run
+    check_name: test
+    conclusion: failure
+    detail: "Job \"test\" failed: test_intstack_push_pop — off-by-one on the first push."
+  - id: evt-budget-2
+    type: ci_run
+    check_name: test
+    conclusion: failure
+    detail: "Job \"test\" failed: test_intstack_push_pop — off-by-one, boundary case at index 0."
+  - id: evt-budget-3
+    type: ci_run
+    check_name: test
+    conclusion: failure
+    detail: "Job \"test\" failed: test_intstack_push_pop — off-by-one reappeared after the growth-path change."
+  - id: evt-budget-4
+    type: ci_run
+    check_name: test
+    conclusion: failure
+    detail: "Job \"test\" failed: test_intstack_push_pop — fix regressed a different boundary (top-of-stack after pop)."
+  - id: evt-budget-5
+    type: ci_run
+    check_name: test
+    conclusion: failure
+    detail: "Job \"test\" failed: test_intstack_push_pop — still red; this is the 5th consecutive round on this test."

@@ -1,0 +1,27 @@
+# Scripted PR-activity event: a review comment demanding work outside refined_spec's scope
+# boundaries (step-08 Tier-2 "Out-of-scope / contradicting comment"). Exercises pr_shepherd's
+# ad-hoc escalation channel, trigger 1 ("out-of-scope work") in agents/pr_shepherd.md.
+#
+# Expected triage:
+#   classification: actionable, but not a rework finding — the comment asks for a new feature,
+#                   not a fix to this change
+#   action:         `write_node_state(..., 'pr_shepherd', {'status': 'awaiting_escalation_answers', ...})`
+#                   then `escalation: awaiting_answers` (never a declared outcome; never silently
+#                   done, never silently declined)
+#   orchestrator:   relays the question to the human (AskUserQuestion) per
+#                   "Escalations from a spoke" in agents/orchestrator.md; on "decline", pr_shepherd
+#                   resumes and journals the decline, ending `watch: continue`; on "expand scope",
+#                   pr_shepherd re-triages the (now in-scope) request as an ordinary actionable
+#                   finding and routes it via the matching L7/L8/L9 outcome
+
+scenario: out-of-scope-comment
+
+events:
+  - id: evt-scope-1
+    type: review_comment
+    author: reviewer4
+    body: |
+      While you're in here, can you also add a `intstack_peek_n(n)` that returns the top n
+      elements as an array? Would be handy for the caller I'm working on.
+    # refined_spec's scope boundaries (for the task this fixture accompanies) name only
+    # push/pop/peek/is_empty/is_full — a new multi-element accessor is a new feature, not a fix.

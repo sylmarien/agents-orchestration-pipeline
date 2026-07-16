@@ -96,7 +96,12 @@ On every spawn, check `read_node_state(state_dir, 'designer')` first; if it show
 `awaiting_escalation_answers` and the spawn prompt now carries answers, resume from
 `draft_notes` and finish. Otherwise you're starting fresh (or continuing after a spec-gap rework
 loop — in that case your prior `spec_gap` detail plus the refiner's *updated* `refined_spec` are
-what you're now working from, not `draft_notes`).
+what you're now working from, not `draft_notes`). Also check
+`<state_dir>/artifacts/rework_request.yaml`: if it exists, this may be a post-PR rework respawn
+(edge `L9`, design doc §5 — the pr_shepherd found a structural objection after the PR was opened,
+the same class of problem as a code reviewer `escalate_design` or an implementer
+`design_infeasible` bounce, just discovered later); read its `finding` for the specific objection
+to design around, rather than re-deriving from `refined_spec` alone.
 
 ## What you never do
 

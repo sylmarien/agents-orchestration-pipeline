@@ -1,0 +1,28 @@
+# Scripted PR-activity events: the same webhook delivery arriving twice (a redelivered CI
+# notification is a common real-world occurrence) — step-08 Tier-2 "duplicates skipped silently".
+# Two events, same `id`, both handled inline within pr_shepherd's one watch-session spawn
+# (`agents/pr_shepherd.md` "What you do" step 2 — it works through its whole batch before ending
+# its turn; see also `agents/orchestrator.md` "Watching the PR (pr_shepherd)").
+#
+# Expected triage:
+#   evt-ci-dup-1 (first pass through the loop): classification informational (CI passed, nothing
+#     to act on) — journaled, loop continues to the next event.
+#   evt-ci-dup-1 (second pass, same id): pr_shepherd's own journal lookup
+#     (`agents/pr_shepherd.md` "Detecting duplicates and repeats") finds the entry it just wrote
+#     naming this same event id — classified duplicate, **no journal entry this time**, loop
+#     continues. Events exhausted with nothing actionable -> the turn ends with `watch: continue`.
+#     A Tier-2 run should assert the journal has exactly one entry for this event id, not two.
+
+scenario: duplicate-event
+
+events:
+  - id: evt-ci-dup-1
+    type: ci_run
+    check_name: build
+    conclusion: success
+    detail: "Job \"build\" passed."
+  - id: evt-ci-dup-1
+    type: ci_run
+    check_name: build
+    conclusion: success
+    detail: "Job \"build\" passed. (redelivered webhook — same event id as above)"

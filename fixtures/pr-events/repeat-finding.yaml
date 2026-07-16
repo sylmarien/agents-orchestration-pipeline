@@ -1,0 +1,41 @@
+# Scripted PR-activity events: the same underlying defect resurfacing after a full rework round
+# already addressed it once (step-08 Tier-2 "Budget: ... or a detected repeat escalates").
+# Exercises pr_shepherd's own semantic repeat-detection (agents/pr_shepherd.md "Detecting
+# duplicates and repeats"), distinct from the mechanical `loop_limits.post_pr` exhaustion in
+# ci-failure-budget-exhaustion.yaml.
+#
+# A Tier-2 run drives this scenario in two watch-session spawns of pr_shepherd, with the real
+# pipeline running in between (not scripted here, since only pr_shepherd's own turns are what this
+# fixture drives):
+#   1. pr_shepherd's first watch-session spawn triages evt-ci-repeat-1 -> expect
+#      `ci_failure_or_code_finding` (L7), a fresh `rework_request.yaml`, and a journal entry. Let a
+#      real L7 round run to completion (implementer fixes -> code_reviewer approves -> ... ->
+#      submitter amends + force-pushes -> T7), then the orchestrator respawns pr_shepherd to
+#      resume watching.
+#   2. That second watch-session spawn triages evt-ci-repeat-2 (a *different* event id, same
+#      underlying defect, described below as reappearing after the fix that round produced).
+#      Expect pr_shepherd's own journal lookup to recognize this as a repeat of the finding from
+#      evt-ci-repeat-1 (same file/area/defect, not merely "the fix didn't fully work") and escalate
+#      rather than filing a second `rework_request` — `escalation: awaiting_answers`, trigger
+#      "repeat finding".
+
+scenario: repeat-finding
+
+events:
+  - id: evt-ci-repeat-1
+    type: ci_run
+    check_name: test
+    conclusion: failure
+    detail: |
+      Job "test" failed: `test_intstack_capacity_boundary` — `intstack_push` overwrites the top
+      element instead of returning the full-stack error code when the stack is already at
+      capacity.
+  - id: evt-ci-repeat-2
+    type: ci_run
+    check_name: test
+    conclusion: failure
+    detail: |
+      Job "test" failed again, after the capacity-boundary fix from evt-ci-repeat-1 was merged
+      into this branch: `test_intstack_capacity_boundary` is red again — `intstack_push` still
+      overwrites the top element at capacity, this time via the growth-path branch the first fix
+      didn't touch. Same defect class (capacity boundary handling), not a new one.

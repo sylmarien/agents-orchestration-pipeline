@@ -43,7 +43,10 @@ On every spawn, first check whether this is a rework respawn: read
 for your own most recent entry and, if `<state_dir>/artifacts/docs_review_report.md` exists,
 read it — a second-or-later visit means the documentation reviewer sent you back with
 `request_changes` (edge `L3`); treat its findings as the work list instead of re-surveying the
-diff from scratch.
+diff from scratch. Also check `<state_dir>/artifacts/rework_request.yaml`: if it exists and is
+more recent than `docs_review_report.md` (or that file doesn't exist at all), this is instead a
+post-PR rework respawn (edge `L8` — the pr_shepherd found a docs finding after the PR was opened);
+read its `finding` as the work list instead.
 
 ## What you do
 

@@ -22,14 +22,13 @@ with, and never a party that talks to another spoke directly (hub-and-spoke, des
 Read `../docs/agent-pipeline-design.md` for the full rationale behind everything below; this
 file is the operational instructions, not a restatement of the design.
 
-**Scope note (this build, Step 7):** the real refiner, designer, implementer, code_reviewer,
-documenter, documentation_reviewer, and submitter now exist (`agents/refiner.md`,
+**Scope note (this build, Step 8):** every node's real agent now exists (`agents/refiner.md`,
 `agents/designer.md`, `agents/implementer.md`, `agents/code_reviewer.md`, `agents/documenter.md`,
-`agents/documentation_reviewer.md`, `agents/submitter.md`); pr_shepherd still doesn't — it lands
-in Step 8. Until an `agents/<node>.md` file exists for a node, spawn the **stub agent**
-(`fixtures/stub_agent.md`) in its place, per "Spawning a node" below. This lets the full
-routing/gating/state/worktree machinery be exercised end-to-end before every real agent is
-written (the "walking skeleton", now with a strictly longer real prefix each step).
+`agents/documentation_reviewer.md`, `agents/submitter.md`, `agents/pr_shepherd.md`) — the walking
+skeleton is fully thickened. The **stub agent** (`fixtures/stub_agent.md`) remains only for
+exercising the routing/gating/state/worktree machinery in isolation (e.g. against
+`fixtures/stub-outcomes/*`), per "Spawning a node" below; a live run against a real repository
+always uses the real agents.
 
 ## Startup: resolving config, worktree, and state
 
@@ -101,7 +100,16 @@ The transition table (`config/transition_table.yaml`) is your routing data, and 
 spawned agent ever sees this file (design doc §4 "Decoupling and mediation"). Read it into your
 context once per pipeline. Then, until you reach the table's `terminal_node` (`done`):
 
-1. **Spawn the current node's agent** (see "Spawning a node" below) with exactly the input
+1. **If the current node is `pr_shepherd`, first check `pr_shepherd.enabled`** (resolved config;
+   built-in default `true`). If `false`: do not spawn it at all — the pipeline ends at G7 exactly
+   as it did before this node existed. Treat this exactly like step 7 below (auto-clean the
+   worktree, report the final outcome — PR link, decision journal, residual risks — and stop)
+   without a `T8` transition ever being recorded; the history simply shows the pipeline arriving
+   at `pr_shepherd` via `T7` and stopping there. If `true` (the default): see "Watching the PR
+   (pr_shepherd)" below instead of the rest of this step — pr_shepherd is the one node spawned
+   repeatedly, once per PR-activity event, rather than once with one outcome; come back to step 2
+   once that section produces an outcome to route.
+   **Every other node:** spawn its agent (see "Spawning a node" below) with exactly the input
    artifacts its `consumes` list names. Where to read each one from depends on who produced it:
    a **real** producer agent (Steps 3–8) writes `diff`/`docs_changeset` as commits in the
    worktree (they're durable/published artifacts per design doc §3, not state-directory files)
@@ -112,11 +120,12 @@ context once per pipeline. Then, until you reach the table's `terminal_node` (`d
 2. **Read its typed outcome.** Every node ends its turn with one outcome from its `outcomes`
    list in the table — never freeform prose you have to interpret. **Exceptions:** a real agent
    (Step 3 on) may instead end its turn with `escalation: awaiting_answers` (the ad-hoc
-   escalation channel; see "Escalations from a spoke" below), or the implementer specifically
+   escalation channel; see "Escalations from a spoke" below), the implementer specifically
    (Step 4) with `escalation: inner_loop_exhausted` (see "Inner-loop budget exhaustion
-   (implementer)" below) — neither is a routing decision; handle whichever one applies *before*
-   re-entering this loop's step 3. Any other unparseable final message is a stage failure (see
-   "Failure handling"), not a routing decision to guess at.
+   (implementer)" below), or the pr_shepherd specifically (Step 8) with `watch: continue` (see
+   "Watching the PR" below) — none of these three is a routing decision; handle whichever one
+   applies *before* re-entering this loop's step 3. Any other unparseable final message is a stage
+   failure (see "Failure handling"), not a routing decision to guess at.
 3. **Match the outcome to an outgoing edge**: find the edge whose `from` is the current node and
    whose `trigger` equals the outcome. Exactly one must match (graph_validate guarantees this
    for the built-in table). That edge's `id` and `to` are your next transition.
@@ -161,10 +170,15 @@ does not execute it).
 
 ## Spawning a node
 
-For the node you're about to spawn:
+For the node you're about to spawn: check whether this run named a stub-scenario override for it
+(the `run` skill's `--stub <scenario>` argument, `skills/run/SKILL.md`) — every node now has a
+real agent (Step 8 completed the set), so this override exists purely for deterministic testing
+(driving the routing/gating/state/worktree machinery against `fixtures/stub-outcomes/*` without
+waiting on real agent reasoning), not for filling a gap in the roster. If named, spawn the stub
+agent for this node regardless of whether a real agent exists; otherwise:
 
-- If `agents/<node>.md` exists (a real agent, landed in Steps 3–8), spawn it via the `Task` tool
-  with that agent, handing it exactly its declared `consumes` artifacts, `state_dir`,
+- If `agents/<node>.md` exists (a real agent — every node's does, as of Step 8), spawn it via the
+  `Task` tool with that agent, handing it exactly its declared `consumes` artifacts, `state_dir`,
   `pipeline_id`, `repo_root`, and whatever slice of the resolved config that stage's own contract
   needs (for the refiner/designer: their resolved `autonomy.<node>` level and
   `escalation_policy` — see `agents/refiner.md`/`agents/designer.md`; for the implementer: the
@@ -179,9 +193,17 @@ For the node you're about to spawn:
   for the submitter (Step 7): `base_commit`, `pre_docs_commit` (same slicing use as the
   documentation reviewer), the manifest's `resolved_checks` (so it can re-verify after its own
   rebase), and its resolved `submitter.single_commit` and `decision_journal.in_pr_body` — see
-  `agents/submitter.md`; later steps add their own) — and nothing else of your own routing state
-  (it must not see the
+  `agents/submitter.md`; for the pr_shepherd (Step 8): `pull_request` (the submitter's `pr_url`,
+  read from `node-state/submitter.json`) — it subscribes and watches on its own from there (see
+  "Watching the PR (pr_shepherd)" below, which also covers why this node may take several spawns,
+  not the usual "one spawn, one outcome," to get from G7 to merge/close) — and nothing else of
+  your own routing state (it must not see the
   transition table, other nodes' artifacts, your loop-budget counters, or the gate policy — P7).
+  On any respawn of implementer/documenter/designer/submitter reached via `L7`–`L10` (a
+  post-PR rework re-attribution — see "Watching the PR" below), the pr_shepherd's `rework_request`
+  is already sitting in `<state_dir>/artifacts/rework_request.yaml` for that stage to read itself
+  (the same self-service pattern the documenter already uses for `docs_review_report.md` on an
+  `L3` respawn) — you don't need to relay its contents yourself, just spawn the node as usual.
   On a respawn after `inner_loop_exhausted` (see below), also pass whatever revised
   `max_iterations` the human approved. The first time you're about to spawn the documenter for a
   given pipeline (never on a later `L3` respawn — those add more docs commits on top of the same
@@ -190,15 +212,21 @@ For the node you're about to spawn:
   the documentation reviewer read `diff` as `<base_commit>..<pre_docs_commit>` (already
   code-reviewed) and `docs_changeset` as `<pre_docs_commit>..HEAD` (the documenter's own commits)
   without either of them seeing your routing state.
-- Otherwise, spawn `fixtures/stub_agent.md` instead, telling it (in the spawn prompt): the node
-  id it is playing, the scenario file to read
-  (`fixtures/stub-outcomes/<scenario>.yaml` — the scenario is a `run` skill argument, see
-  `skills/run/SKILL.md`; default to `happy-path` if the user didn't specify one), the state
-  directory path, and this node's **0-based** visit index so far in this pipeline — 0 on its
-  first visit, 1 on its second after a rework loop, and so on (track it yourself, e.g. via
-  `node-state/<node>.json`'s `visit_count` field; the stub agent has no memory of prior visits,
-  and its scripted-outcome lists are 0-indexed, matching `fixtures/stub_agent.md`'s own
-  `entry = nodes[node_id][visit_index]` lookup).
+- When the stub override applies (this run named a `--stub <scenario>`), spawn
+  `fixtures/stub_agent.md` instead, telling it (in the spawn prompt): the node id it is playing,
+  the scenario file to read (`fixtures/stub-outcomes/<scenario>.yaml` — the scenario is the `run`
+  skill's argument, see `skills/run/SKILL.md`), the state directory path, and this node's
+  **0-based** visit index so far in this pipeline — 0 on its first visit, 1 on its second after a
+  rework loop, and so on (track it yourself, e.g. via `node-state/<node>.json`'s `visit_count`
+  field; the stub agent has no memory of prior visits, and its scripted-outcome lists are
+  0-indexed, matching `fixtures/stub_agent.md`'s own `entry = nodes[node_id][visit_index]` lookup).
+  If the named scenario has no scripted outcomes for a node the pipeline reaches, that is a build/
+  fixture error: stop and tell the user rather than guessing an outcome. **pr_shepherd under a
+  stub override**: the stub agent still plays "spawn once, read one outcome" like every other
+  node — it does not simulate the real pr_shepherd's own internal subscribe-and-triage loop
+  ("Watching the PR" below), so a stub scenario reaching `pr_shepherd` gets exactly one scripted
+  visit regardless of how many watch-session spawns a live run would have needed (every bundled
+  scenario scripts `pr_terminal` on that one visit).
   If neither a real agent nor a stub scenario is available for a node, that is a build error:
   stop and tell the user this node has no implementation yet.
 - A real producer agent writes `diff`/`docs_changeset` as worktree commits and every other
@@ -206,16 +234,69 @@ For the node you're about to spawn:
   artifacts (including placeholder `diff`/`docs_changeset` content) into `artifacts/` — see
   point 1 above. Every agent (real or stub) ends its turn with exactly one of its node's declared
   `outcomes` as its final message — except a real agent pausing to escalate, which ends with
-  `escalation: awaiting_answers` or (the implementer only) `escalation: inner_loop_exhausted`
-  instead (see below).
+  `escalation: awaiting_answers` (or, implementer/pr_shepherd-specific, `escalation:
+  inner_loop_exhausted`/`watch: continue`) instead (see below).
+
+## Watching the PR (pr_shepherd)
+
+Every other node in the routing loop is "spawn once, read one outcome, route." pr_shepherd
+(Step 8, design doc §2 "PR shepherd") is the one exception, in one specific way: it may take
+**several spawns** to get from G7 to the PR's merge or close, because it only ever reports back
+(ends its turn) when there's something for you to route — everything else (subscribing, reading
+events, replying to answerable questions, recognizing duplicates) it handles **itself**, inline,
+without troubling you. **You do not subscribe to anything and you never see a raw PR-activity
+event** — that would mean seeing the PR shepherd's own inputs and pre-empting its triage judgement,
+which is its job, not yours (P7). Your role here is exactly your role everywhere else: spawn it,
+read back what it reports, route it.
+
+1. **Spawn `pr_shepherd`** (per "Spawning a node" above) with its declared `consumes`
+   (`pull_request`, `refined_spec`, `design_doc`, `decision_journal`) plus `repo_root`,
+   `base_commit`, `state_dir`, `pipeline_id` — nothing else of your own routing state (P7, same as
+   every other node). This happens the first time a pipeline reaches `pr_shepherd` (right after
+   routing loop step 1 above finds `pr_shepherd.enabled: true`), and again every time you need to
+   resume watching after routing one of its reports below. **(This build's fixture-driven runs)**:
+   also hand it the `pr_events_scenario` path (`fixtures/pr-events/<scenario>.yaml`) in place of a
+   live PR to subscribe to — `agents/pr_shepherd.md` step 1 reads that file's event list instead.
+2. **Read its result**, same three-way split as routing loop step 2 generally, specialized to this
+   node:
+   - **One of its five declared outcomes** (`pr_terminal`, `ci_failure_or_code_finding`,
+     `docs_finding`, `structural_objection`, `rebase_conflict`) — resume the routing loop at step 3
+     (match the outcome to its edge — `T8` or `L7`–`L10` — and continue exactly as for any other
+     node; `L7`–`L10`'s shared `post_pr` loop budget and `L9`'s `GE1` auto-activation are handled
+     by routing loop steps 4–5 exactly as written, no special-casing needed there). For `L7`–`L10`,
+     once the rework flows all the way back down through the review path to the submitter (which
+     amends + force-pushes rather than opening a fresh PR — see `agents/submitter.md` "Rework
+     respawn") and lands on `T7`/`G7` again, come back to step 1 above and respawn `pr_shepherd` to
+     resume watching (it re-subscribes itself — its subscription does not survive between spawns).
+   - **`escalation: awaiting_answers`** — handle it via "Escalations from a spoke" below, same
+     mechanism as the refiner/designer/submitter; on respawn after the human answers, pr_shepherd
+     resumes its own in-progress triage internally (it does not necessarily produce a routing
+     outcome from the escalation itself — read what it actually ends with, and treat that the same
+     as any other result from this step).
+   - **`watch: continue`** — not a routing decision and not an escalation: pr_shepherd worked
+     through everything it currently had and found nothing actionable. Append nothing to the
+     pipeline-state history for it (pr_shepherd's own journal entries, if any, already record each
+     triage) and go back to step 1 above to respawn it and keep watching. How soon you respawn is
+     your own judgement call, not something a raw event tells you to do — you never inspect PR
+     activity yourself (that's the whole point of this section's opening paragraph); pick a cadence
+     (immediately, or after a short wait) and let `pr_shepherd`'s own subscription decide, on each
+     respawn, whether anything new has actually arrived.
+3. **Terminal.** Once a report resolves to `pr_terminal` (step 2's first bullet routes it through
+   `T8`/`G8` like any other edge), routing loop step 7 auto-cleans the worktree as usual — no
+   further respawn of `pr_shepherd`.
 
 ## Escalations from a spoke (ad-hoc questions)
 
 A **separate channel from gates** (design doc §7 "Interaction with gating"): the refiner and
-designer (and, from later steps, any other agent whose autonomy level permits it) may pause
-mid-stage with a batched set of questions instead of ending with a normal outcome. You recognize
-this the moment a spawned agent's final message is `escalation: awaiting_answers` rather than one
-of its declared outcomes (routing loop step 2, above). When you see it:
+designer pause mid-stage with a batched set of questions whenever their autonomy-gradient
+threshold says to (`agents/refiner.md`/`agents/designer.md`); the submitter and pr_shepherd use
+the same `escalation: awaiting_answers` signal for their own narrower, enumerated triggers instead
+(a rebase conflict or failed re-verify for the submitter; out-of-scope work, a contradicted
+gate-approved artifact, or a detected repeat finding for the pr_shepherd — see
+`agents/submitter.md`/`agents/pr_shepherd.md`), even though `full`/`decide` autonomy has no
+*generic* ambiguity threshold of its own. Either way you recognize it the same way: the moment a
+spawned agent's final message is `escalation: awaiting_answers` rather than one of its declared
+outcomes (routing loop step 2, above). When you see it:
 
 1. Read the batch it left for you:
    `python3 -c "from lib.state import read_node_state; print(read_node_state('<state_dir>', '<node>'))"`
@@ -242,7 +323,11 @@ of its declared outcomes (routing loop step 2, above). When you see it:
    prompt contract ("on every spawn, check for a pending escalation") finds them. This is not a
    `restart` record — nothing crashed; the node is continuing deliberately.
 6. When it finishes, it ends with a normal declared outcome — re-enter the routing loop at step 3
-   as usual.
+   as usual. **Exception:** a respawned pr_shepherd may instead end with `watch: continue` (the
+   human declined an out-of-scope request, or ruled a finding a genuine repeat, and it then found
+   nothing else actionable in whatever else it had queued) — that's "Watching the PR" step 2's
+   third bullet, not a routing decision either; go back to that section's step 1 to respawn it and
+   keep watching, rather than step 3 here.
 
 ## Handling an override outside a gate (via `/pipeline:decisions`)
 
@@ -299,6 +384,7 @@ escalation (routing loop step 2's exception), by the spawned implementer's final
 | Loop budget exceeded | Escalate to the human with both sides' arguments; they pick a direction or abort. |
 | Worktree conflict | Does not arise in Option A's single-worktree-per-pipeline model (design doc §15) — if you ever observe one, treat it as a bug and escalate rather than auto-resolving. |
 | User aborts | Preserve the worktree and all artifacts (do **not** run the auto-clean step). If a gate was open, append its `gate_resolved` record with `detail: "abort"`. Report the current state and the decision journal to the user, then stop. Nothing is force-deleted. |
+| Resuming a pipeline whose `latest_position` is `pr_shepherd` (Startup step 10) | Respawn `pr_shepherd` per "Watching the PR" step 1, same as any other resumed watch session — it re-subscribes itself (its subscription is turn-scoped, not yours to hold or restore) and checks its own `node_state` for a `pending_events` queue or an `awaiting_escalation_answers` resume before treating anything as new. This is not a `restart` record on its own (pr_shepherd's watch sessions are expected to end and respawn repeatedly by design) — append one only if an individual watch-session turn was actually interrupted mid-spawn (a genuine crash, not an ordinary `watch: continue`/report-and-respawn cycle). |
 
 ## What you never do
 
