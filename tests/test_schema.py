@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,8 @@ from lib.resolve_config import ConfigError, load_defaults, load_schema, resolve
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_MANIFEST = REPO_ROOT / ".claude-plugin" / "plugin.json"
+MARKETPLACE_MANIFEST = REPO_ROOT / ".claude-plugin" / "marketplace.json"
+_KEBAB_CASE_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 AGENTS = [
     "refiner",
@@ -147,3 +150,79 @@ def test_config_schema_is_valid_json_document():
         schema = json.load(f)
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     assert schema["type"] == "object"
+
+
+# --- Tier 2: plugin marketplace manifest is well-formed and installable -----------------------
+
+
+@pytest.fixture
+def marketplace() -> dict:
+    with open(MARKETPLACE_MANIFEST, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def test_marketplace_manifest_is_valid_json(marketplace):
+    assert isinstance(marketplace.get("name"), str) and marketplace["name"]
+    assert isinstance(marketplace.get("owner"), dict) and marketplace["owner"].get("name")
+    assert isinstance(marketplace.get("plugins"), list) and marketplace["plugins"]
+
+
+def test_marketplace_name_is_kebab_case(marketplace):
+    # Reserved-name checks and the claude.ai marketplace sync both require kebab-case
+    # (docs: "Plugin name is not kebab-case" warning applies to plugin names; the same
+    # convention is followed here for the marketplace name itself).
+    assert _KEBAB_CASE_RE.match(marketplace["name"]), f"{marketplace['name']!r} is not kebab-case"
+
+
+# Marketplace names Anthropic reserves for official use -- a third-party marketplace must never
+# collide with one of these (docs/en/plugin-marketplaces "Reserved names").
+_RESERVED_MARKETPLACE_NAMES = {
+    "claude-code-marketplace",
+    "claude-code-plugins",
+    "claude-plugins-official",
+    "claude-plugins-community",
+    "claude-community",
+    "anthropic-marketplace",
+    "anthropic-plugins",
+    "agent-skills",
+    "anthropic-agent-skills",
+    "knowledge-work-plugins",
+    "life-sciences",
+    "claude-for-legal",
+    "claude-for-financial-services",
+    "financial-services-plugins",
+    "first-party-plugins",
+    "healthcare",
+}
+
+
+def test_marketplace_name_is_not_reserved(marketplace):
+    assert marketplace["name"] not in _RESERVED_MARKETPLACE_NAMES
+
+
+def test_marketplace_lists_the_agent_pipeline_plugin_at_repo_root(marketplace):
+    entries = {p["name"]: p for p in marketplace["plugins"]}
+    assert "agent-pipeline" in entries
+    entry = entries["agent-pipeline"]
+    # A relative-path source resolves against the marketplace root (the directory containing
+    # `.claude-plugin/`), which for this repo is the repo root itself -- the same root that
+    # already carries `.claude-plugin/plugin.json` (this file's own directory).
+    assert entry["source"] == "./"
+    assert (REPO_ROOT / ".claude-plugin" / "plugin.json").is_file()
+
+
+def test_marketplace_plugin_names_are_unique(marketplace):
+    names = [p["name"] for p in marketplace["plugins"]]
+    assert len(names) == len(set(names))
+
+
+def test_marketplace_entry_does_not_shadow_plugin_json_version(marketplace):
+    # Claude Code always prefers plugin.json's `version` over the marketplace entry's, silently --
+    # setting both risks a stale marketplace value masking real releases (docs/en/plugin-
+    # marketplaces "Version resolution"). Since plugin.json already pins a version, the
+    # marketplace entry must leave `version` unset so plugin.json stays the single source of truth.
+    entries = {p["name"]: p for p in marketplace["plugins"]}
+    with open(PLUGIN_MANIFEST, encoding="utf-8") as f:
+        plugin_manifest = json.load(f)
+    if plugin_manifest.get("version"):
+        assert "version" not in entries["agent-pipeline"]
