@@ -26,6 +26,20 @@ reviewer, gates G5/G6, the L3 docs-rework loop) is also complete — see `agents
 `agents/documentation_reviewer.md`.
 [Step 7](docs/implementation/step-07-submitter.md) (submitter + permissions/sandboxing) is also
 complete — see `agents/submitter.md` and `hooks/sandbox_guard.py`. The real linear spine now runs
-end-to-end from the refiner through a live PR (G7). Only the pr_shepherd doesn't exist yet; the
-orchestrator drives the **stub-agent harness** (`fixtures/stub_agent.md` +
-`fixtures/stub-outcomes/`) in its place until Step 8 replaces it.
+end-to-end from the refiner through a live PR (G7).
+[Step 8](docs/implementation/step-08-pr-shepherd.md) (PR shepherd) is also complete — see
+`agents/pr_shepherd.md` and `fixtures/pr-events/`. Every node now has a real agent; the
+**stub-agent harness** (`fixtures/stub_agent.md` + `fixtures/stub-outcomes/`) remains only for
+deterministic routing tests, per `agents/orchestrator.md`'s "Spawning a node".
+
+## Installing
+
+This repository is both the plugin and its own [plugin marketplace](https://code.claude.com/docs/en/plugin-marketplaces)
+(`.claude-plugin/marketplace.json`). From within Claude Code:
+
+```
+/plugin marketplace add sylmarien/agents-orchestration-pipeline
+/plugin install agent-pipeline@agent-pipeline-marketplace
+```
+
+Then invoke it with `/pipeline:run <task description>` (see `commands/run.md`).
