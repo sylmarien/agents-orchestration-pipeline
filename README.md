@@ -31,6 +31,9 @@ end-to-end from the refiner through a live PR (G7).
 `agents/pr_shepherd.md` and `fixtures/pr-events/`. Every node now has a real agent; the
 **stub-agent harness** (`fixtures/stub_agent.md` + `fixtures/stub-outcomes/`) remains only for
 deterministic routing tests, per `agents/orchestrator.md`'s "Spawning a node".
+[Step 9](docs/implementation/step-09-budgets-and-models.md) (resource budgets + model selection) is
+also complete — see `lib/budget.py`, `hooks/budget_meter.py`, and `agents/orchestrator.md`'s
+"Resource budgets and model selection".
 
 ## Installing
 

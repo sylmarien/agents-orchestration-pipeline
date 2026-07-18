@@ -22,13 +22,16 @@ with, and never a party that talks to another spoke directly (hub-and-spoke, des
 Read `../docs/agent-pipeline-design.md` for the full rationale behind everything below; this
 file is the operational instructions, not a restatement of the design.
 
-**Scope note (this build, Step 8):** every node's real agent now exists (`agents/refiner.md`,
+**Scope note (this build, Steps 8–9):** every node's real agent now exists (`agents/refiner.md`,
 `agents/designer.md`, `agents/implementer.md`, `agents/code_reviewer.md`, `agents/documenter.md`,
 `agents/documentation_reviewer.md`, `agents/submitter.md`, `agents/pr_shepherd.md`) — the walking
 skeleton is fully thickened. The **stub agent** (`fixtures/stub_agent.md`) remains only for
 exercising the routing/gating/state/worktree machinery in isolation (e.g. against
 `fixtures/stub-outcomes/*`), per "Spawning a node" below; a live run against a real repository
-always uses the real agents.
+always uses the real agents. One cross-cutting concern is layered on top of that full spine:
+resource budgets + model selection ("Resource budgets and model selection" below, design doc §10/
+§11) — purely additive: a zero-config run has `budget.tokens: null`, so it is never metered at
+all, changing nothing about a run that doesn't configure a budget.
 
 ## Startup: resolving config, worktree, and state
 
@@ -65,8 +68,14 @@ On being spawned with a task (from `/pipeline:run`, see `skills/run/SKILL.md`):
    This is idempotent — calling it again for the same `pipeline_id` (e.g. resuming after a
    restart) reuses the existing directory rather than wiping it.
 7. **Write the run manifest** into the state directory: resolved config + provenance, the
-   plugin version (`.claude-plugin/plugin.json`'s `version`), the config schema version, and
-   (from Step 9) model/spend fields left empty for now.
+   plugin version (`.claude-plugin/plugin.json`'s `version`), the config schema version, the
+   `spawn_model` (the model this orchestrator session is itself running as right now — the
+   "inherit" fallback every per-agent model resolution bottoms out at, design doc §11), and a
+   `models` map (node id → resolved model, filled in as each node is first spawned — see "Resource
+   budgets and model selection" below). `budget.tokens`/`warn_ratio` are read from the resolved
+   config directly; spend itself is *not* duplicated into the manifest file — `lib.budget`'s own
+   `<state_dir>/budget.json` is the single source of truth for spend, and the final report/GB1
+   bundle read it fresh each time rather than trusting a manifest snapshot that could go stale.
    `python3 -m lib.state write-manifest` is not exposed as a CLI verb; write it directly with
    `python3 -c "from lib.state import write_manifest; write_manifest(<state_dir>, <manifest_dict>)"`.
 8. **Create the worktree**:
@@ -177,6 +186,18 @@ real agent (Step 8 completed the set), so this override exists purely for determ
 waiting on real agent reasoning), not for filling a gap in the roster. If named, spawn the stub
 agent for this node regardless of whether a real agent exists; otherwise:
 
+- **Resolve this node's model first** (design doc §11; Step 9 — see "Resource budgets and model
+  selection" below): `resolve_model(node, project_model=<project layer's 'model' dict>,
+  prompt_model=<prompt layer's 'model' dict>, spawn_model=<manifest's spawn_model>)`. Pass the
+  result to the `Task` tool's own model parameter for this spawn (every agent's frontmatter reads
+  `model: inherit`; this is what actually resolves that at spawn time — a real per-agent override
+  never means switching a live session's model mid-turn, only choosing it fresh at spawn). Record
+  it into the manifest's `models` map under this node's id (read-modify-write, same pattern as
+  `base_commit`) — first visit only; a rework respawn reuses the same node and thus the same
+  already-recorded model rather than re-resolving (re-resolving could pick a different value if the
+  human changed a prompt-layer override mid-run via `/pipeline:decisions`, but that is exactly the
+  "gate-time model override" case design doc §11 describes as journaled like any other decision,
+  not something you silently re-derive here).
 - If `agents/<node>.md` exists (a real agent — every node's does, as of Step 8), spawn it via the
   `Task` tool with that agent, handing it exactly its declared `consumes` artifacts, `state_dir`,
   `pipeline_id`, `repo_root`, and whatever slice of the resolved config that stage's own contract
@@ -236,6 +257,60 @@ agent for this node regardless of whether a real agent exists; otherwise:
   `outcomes` as its final message — except a real agent pausing to escalate, which ends with
   `escalation: awaiting_answers` (or, implementer/pr_shepherd-specific, `escalation:
   inner_loop_exhausted`/`watch: continue`) instead (see below).
+- **Record the spawn's usage the moment it ends its turn** — whatever usage object the `Task` tool's
+  result carries for that spawn (input/output/cache tokens), regardless of which of the outcomes
+  above it ended with:
+  `python3 -c "from lib.budget import record_usage; import json; print(json.dumps(record_usage('<state_dir>', '<node>', <usage object>)))"`.
+  Then check the budget (see "Resource budgets and model selection" below) before doing anything
+  else with the result. This happens on every spawn, stub or real, escalation or declared outcome
+  — usage metering is unconditional, unlike gating.
+
+## Resource budgets and model selection (design doc §10, §11; Step 9)
+
+**Model selection** is entirely a spawn-time concern, covered above ("Spawning a node"): resolve,
+pass to the `Task` tool, record in the manifest, done. There is no separate runtime section for it
+because a resolved model never changes anything about how you route — it only changes which model
+the node's session runs on.
+
+**Resource budgets** are checked right after you record a spawn's usage (previous section), every
+single time, regardless of gate preset — a budget stop is a spend decision, not a workflow
+checkpoint, so `full_auto` never suppresses it (same rationale as GE1/GE2):
+
+```
+python3 -c "from lib.budget import check_budget; import json; print(json.dumps(check_budget('<state_dir>', <resolved budget.tokens>, <resolved budget.warn_ratio>)))"
+```
+
+- **`budget_tokens` is `null`** (the built-in default): `warn`/`exceeded` are always `False` — a
+  zero-config run is never metered at all. Skip the rest of this section entirely.
+- **`warn: true`, `exceeded: false`** (crossed `warn_ratio`, default 0.8): journal it — a
+  `decision_journal` entry with `agent` set to the node that just ran, `reversal_cost: low` (a
+  warning invalidates nothing), `chosen`/`rationale` noting the ratio and that no pause occurred —
+  and surface it on the pipeline graph if your UI has one. **Do not pause.** Continue the routing
+  loop exactly as you otherwise would (steps 2–3 onward) with this spawn's outcome.
+- **`exceeded: true`** (100%+): this is **GB1**, the budget-exhaustion gate. It is not a
+  transition-table edge (`config/transition_table.yaml`'s `gates` mapping deliberately omits it,
+  per that file's own comment) — you recognize and fire it procedurally, right here, before doing
+  anything else with the spawn's outcome:
+  1. Pause at this safe point (you're always at one right after a spawn ends its turn — first-class
+     sessions make this resume-safe).
+  2. Present the bundle: the spend breakdown per node
+     (`python3 -c "from lib.budget import read_usage; import json; print(json.dumps(read_usage('<state_dir>')))"`),
+     the current pipeline position (the node that just ran), pending decision-journal entries
+     (same call as any other gate bundle), and a rough estimate of remaining work (your own
+     judgement — how many forward-spine nodes remain from here).
+  3. **Multi-pipeline runs**: also report the run-level aggregate —
+     `python3 -c "from lib.budget import aggregate_totals; import json; print(json.dumps(aggregate_totals(<list of every active pipeline's state_dir>)))"`
+     — so the human decides with the whole run's spend in view, not just this one pipeline's.
+  4. Ask via `AskUserQuestion`: extend (a new `budget.tokens` value — use it for this pipeline's
+     remaining `check_budget` calls), continue unmetered (skip budget checks for the rest of this
+     pipeline's run), or abort (preserve the worktree and artifacts — "Failure handling" below,
+     "User aborts" row).
+  5. Append an `escalation` history record (`detail`: "GB1 budget exhaustion at node <node>,
+     spend <total>/<budget>", plus the human's choice).
+  6. If extending or continuing unmetered: proceed with the spawn's actual outcome exactly as you
+     otherwise would (routing loop step 2 onward) — GB1 firing does not discard the work the node
+     you just recorded usage for actually produced. If aborting: follow "Failure handling"'s "User
+     aborts" row instead of routing the outcome at all.
 
 ## Watching the PR (pr_shepherd)
 
