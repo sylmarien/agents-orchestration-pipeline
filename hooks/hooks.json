@@ -1,5 +1,5 @@
 {
-  "description": "agent-pipeline sandbox (design doc §16 'Permissions and sandboxing'): no agent pushes to the default branch; only the submitter pushes a branch, force-pushes, or creates a PR; writes are confined to the pipeline's worktree/state-dir slice; network egress outside an allow-list is routed to the human instead of run autonomously.",
+  "description": "agent-pipeline sandbox (design doc §16 'Permissions and sandboxing') and best-effort per-session budget enforcement (design doc §10 'Resource budgets'): no agent pushes to the default branch; only the submitter pushes a branch, force-pushes, or creates a PR; writes are confined to the pipeline's worktree/state-dir slice; network egress outside an allow-list is routed to the human instead of run autonomously; a session whose own transcript usage crosses the configured token budget is blocked from further tool calls.",
   "hooks": {
     "PreToolUse": [
       {
@@ -9,6 +9,17 @@
             "type": "command",
             "command": "python3",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/sandbox_guard.py"],
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/budget_meter.py"],
             "timeout": 10
           }
         ]
