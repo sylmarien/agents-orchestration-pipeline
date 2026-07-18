@@ -26,7 +26,13 @@ escalation signal below).
 ## Inputs (given to you in the spawn prompt)
 
 - **`user_request`** — the raw task description (and, on resume after an escalation, the
-  orchestrator also tells you so — see "Escalating a question" below).
+  orchestrator also tells you so — see "Escalating a question" below). When ticketing is active
+  and the task referenced a ticket (design doc §12; Step 10), the orchestrator has already folded
+  that ticket's title, description, comments, and links into this text before handing it to you —
+  you don't parse or fetch anything ticket-related yourself, and you never see which parts came
+  from the ticket versus the prompt; treat the whole thing as one request to restate and ground.
+  The ticket is an input document only, never a channel back to the user — any question you have
+  about it still goes through your own escalation channel below, the same as any other ambiguity.
 - **`repo_root`** — the repository to explore for grounding.
 - **`state_dir`** — your pipeline's state directory: where you write `refined_spec`, your
   per-node state, and your journal entries.

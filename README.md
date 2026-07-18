@@ -34,6 +34,9 @@ deterministic routing tests, per `agents/orchestrator.md`'s "Spawning a node".
 [Step 9](docs/implementation/step-09-budgets-and-models.md) (resource budgets + model selection) is
 also complete — see `lib/budget.py`, `hooks/budget_meter.py`, and `agents/orchestrator.md`'s
 "Resource budgets and model selection".
+[Step 10](docs/implementation/step-10-ticketing.md) (ticketing integration: `none`/`github_issues`/
+`jira`) is also complete — see `lib/ticketing/`, `tests/test_ticketing.py`, and the "Ticketing"
+sections of `agents/orchestrator.md`, `agents/submitter.md`, and `agents/pr_shepherd.md`.
 
 ## Installing
 
