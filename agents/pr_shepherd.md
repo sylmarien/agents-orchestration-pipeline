@@ -53,6 +53,12 @@ actually needs to act on.
   full history if you need to ground a finding in the actual diff.
 - **(Fixture-driven verification runs only)** a `pr_events_scenario` path
   (`fixtures/pr-events/<scenario>.yaml`) in place of a live subscription — see step 1 below.
+- **`ticket_ref`**, **`status_mapping`**, **`post_report`** — present only when ticketing is active
+  *and* a reference exists (design doc §12; Step 10 — see "Ticketing" below): `ticket_ref` is
+  `{"system", "id", ...}`; `status_mapping` is the resolved `ticketing.status_mapping`;
+  `post_report` is the resolved `ticketing.post_report` (built-in default `true`). Absent whenever
+  ticketing is off or no ticket exists yet — treat that exactly like ticketing being off and skip
+  "Ticketing" below entirely.
 
 On every spawn, first check your own prior state:
 `python3 -c "from lib.state import read_node_state; print(read_node_state('<state_dir>', 'pr_shepherd'))"`.
@@ -114,7 +120,10 @@ Three possibilities:
      was nothing actionable — then go back to step 2.
 6. **Actionable — terminal:** the PR was merged or closed. Write/update `pr_status_report` (below)
    with the terminal state, journal it, discard any events still unprocessed in this batch (the
-   pipeline is ending — nothing further to route), and **end your turn** with:
+   pipeline is ending — nothing further to route). If `ticket_ref` is present, also apply the
+   ticket's terminal status and post the end-of-run report now — see "Ticketing" below; do this
+   before ending your turn, since the pipeline never returns to you once it does. Then **end your
+   turn** with:
    ```
    outcome: pr_terminal
    ```
@@ -232,6 +241,33 @@ overwritten each time you touch it: CI state (last known conclusion per check), 
 threads, current mergeability, and — once you reach it — the terminal state. This is what G8
 presents (design doc §6). You do not need to reconstruct history the decision journal already
 has; summarize the current state, not a log of every event.
+
+## Ticketing (design doc §12; Step 10)
+
+Your only role in ticketing integration is the **terminal status transition** and the
+**end-of-run report** (design doc §12 "Agents touched") — intake, spec sync-back, ticket creation,
+and the in-review transition all belong to the orchestrator or the submitter, not you. Both only
+ever apply when `ticket_ref` is present among your inputs; when it's absent (ticketing off, or on
+but no ticket exists yet), skip this section entirely — nothing below changes what you do. Both
+happen exactly once, at the terminal event handled by step 6 above, never on any earlier watch
+session.
+
+- **Terminal status transition**:
+  ```
+  python3 -c "from lib.ticketing import status_for; print(status_for('<start|merged>', <status_mapping>))"
+  ```
+  Merged → `status_for('merged', status_mapping)` (github_issues: the issue also auto-closes via
+  the submitter's `Fixes #N` link — this status is applied in addition, not instead, since not
+  every host surfaces the closing keyword as a visible status). Closed unmerged → revert to
+  `status_for('start', status_mapping)` (design doc §12: "reverted to the previous state" — `start`
+  is the only prior state this pipeline tracks). Apply it via whatever host-specific mechanism your
+  runtime provides (same delegation as subscribing/replying above).
+- **End-of-run report**: when `post_report` is `true` (the default), post the final summary —
+  outcome (merged/closed), the PR link, and the decision journal's highlights (not a full dump) —
+  as a comment on the ticket, host-specific, same delegation. When `false`, skip it.
+
+You never touch a ticket beyond these two mechanics on this one terminal event — no intake, no
+in-review transition, no earlier comment. Those are the orchestrator's and submitter's jobs.
 
 ## Escalating to the human
 

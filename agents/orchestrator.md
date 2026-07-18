@@ -22,16 +22,17 @@ with, and never a party that talks to another spoke directly (hub-and-spoke, des
 Read `../docs/agent-pipeline-design.md` for the full rationale behind everything below; this
 file is the operational instructions, not a restatement of the design.
 
-**Scope note (this build, Steps 8–9):** every node's real agent now exists (`agents/refiner.md`,
+**Scope note (this build, Steps 8–10):** every node's real agent now exists (`agents/refiner.md`,
 `agents/designer.md`, `agents/implementer.md`, `agents/code_reviewer.md`, `agents/documenter.md`,
 `agents/documentation_reviewer.md`, `agents/submitter.md`, `agents/pr_shepherd.md`) — the walking
 skeleton is fully thickened. The **stub agent** (`fixtures/stub_agent.md`) remains only for
 exercising the routing/gating/state/worktree machinery in isolation (e.g. against
 `fixtures/stub-outcomes/*`), per "Spawning a node" below; a live run against a real repository
-always uses the real agents. One cross-cutting concern is layered on top of that full spine:
+always uses the real agents. Two cross-cutting concerns are layered on top of that full spine:
 resource budgets + model selection ("Resource budgets and model selection" below, design doc §10/
-§11) — purely additive: a zero-config run has `budget.tokens: null`, so it is never metered at
-all, changing nothing about a run that doesn't configure a budget.
+§11) and ticketing integration ("Ticketing integration" below, design doc §12) — both purely
+additive: a zero-config run has `budget.tokens: null` and `ticketing.system: none`, so it is never
+metered and has zero ticket side effects, changing nothing about a run that configures neither.
 
 ## Startup: resolving config, worktree, and state
 
@@ -59,9 +60,16 @@ On being spawned with a task (from `/pipeline:run`, see `skills/run/SKILL.md`):
    "
    ```
    A `ConfigError` means the request or project file asked for something invalid — report it to
-   the user instead of guessing a fallback.
+   the user instead of guessing a fallback. If the resolved `ticketing.system` is not `none`,
+   also resolve the ticketing mode and intake a referenced ticket now, before doing anything else
+   with the task text — see "Ticketing integration" below for the full contract; that section's
+   "Startup: mode resolution and intake" is this step's continuation, not a separate later step.
 4. **Echo the resolved overrides back to the user** — every knob whose provenance is `project`
-   or `prompt` (not `defaults`), so they see exactly what's non-default before work starts.
+   or `prompt` (not `defaults`), so they see exactly what's non-default before work starts. If the
+   previous step's ticketing-mode resolution came back `degraded: true` (design doc §12 — a
+   `github_issues` project not actually hosted on GitHub), tell the user that too, in the same
+   message: the run proceeds as `ticketing.system: none` from here on, and this is its only record
+   short of the manifest field written in step 7.
 5. **Validate the transition table** (fails the run fast on a malformed graph):
    `python3 -m lib.graph_validate` (exit 0 = OK).
 6. **Create the state directory**: `python3 -m lib.state init '{"repo_root": "<abs path>", "pipeline_id": "<id>"}'`.
@@ -76,6 +84,12 @@ On being spawned with a task (from `/pipeline:run`, see `skills/run/SKILL.md`):
    config directly; spend itself is *not* duplicated into the manifest file — `lib.budget`'s own
    `<state_dir>/budget.json` is the single source of truth for spend, and the final report/GB1
    bundle read it fresh each time rather than trusting a manifest snapshot that could go stale.
+   When resolved `ticketing.system` is not `none` (design doc §12; Step 10 — see "Ticketing
+   integration" below), also write a `ticketing` field: `{"mode", "degraded", "reason"}` from
+   `resolve_mode` (below) plus `"ref": null` — filled in by read-modify-write (same pattern as
+   `base_commit`) the moment intake or ticket creation resolves an actual reference. When
+   `ticketing.system` is `none`, omit the field entirely rather than writing a degenerate
+   always-`none` placeholder.
    `python3 -m lib.state write-manifest` is not exposed as a CLI verb; write it directly with
    `python3 -c "from lib.state import write_manifest; write_manifest(<state_dir>, <manifest_dict>)"`.
 8. **Create the worktree**:
@@ -85,7 +99,12 @@ On being spawned with a task (from `/pipeline:run`, see `skills/run/SKILL.md`):
    ```
    In the default linear topology (Option A) there is exactly one active worktree per pipeline
    at any time — pass `agent_id` only if a future topology needs a second concurrent worktree,
-   which does not arise here. Before creating it, capture the fork point:
+   which does not arise here. If step 3 above already resolved a ticket reference for this task
+   (see "Ticketing integration" below), append its id to the branch name
+   (`pipeline/<pipeline_id>-<ref_id>`) instead — design doc §12 "Linking": "branch names carry the
+   ticket reference when one exists." A ticket only *created* later (the create-if-missing path,
+   once the refiner has run) is not retrofitted into an already-created branch name. Before
+   creating it, capture the fork point:
    `git -C <repo_root> rev-parse HEAD` (the `base_ref` the worktree is created from). Add it to
    the manifest as `base_commit` (read-modify-write the manifest you wrote in step 7, same pattern
    as `resolved_checks` in step 9 below) — this is what lets the code reviewer (Step 5) and later
@@ -220,6 +239,14 @@ agent for this node regardless of whether a real agent exists; otherwise:
   not the usual "one spawn, one outcome," to get from G7 to merge/close) — and nothing else of
   your own routing state (it must not see the
   transition table, other nodes' artifacts, your loop-budget counters, or the gate policy — P7).
+  When the manifest's `ticketing` field is present and its `ref` is set (Step 10 — "Ticketing
+  integration" below), also hand the submitter and the pr_shepherd the ticketing `ref` (as
+  `ticket_ref`) and the resolved `ticketing.status_mapping` (as `status_mapping`) — plus, for the
+  pr_shepherd only, the resolved `ticketing.post_report` (as `post_report`) — their own "Ticketing"
+  sections cover what each does with these (linking + in-review transition for the submitter;
+  terminal transition + report for the pr_shepherd). When `ticketing` is absent (`system: none`) or
+  `ref` is still null (no reference resolved and no ticket created yet), omit all of it — both
+  agents treat a missing ticketing input exactly like ticketing being off.
   On any respawn of implementer/documenter/designer/submitter reached via `L7`–`L10` (a
   post-PR rework re-attribution — see "Watching the PR" below), the pr_shepherd's `rework_request`
   is already sitting in `<state_dir>/artifacts/rework_request.yaml` for that stage to read itself
@@ -311,6 +338,87 @@ python3 -c "from lib.budget import check_budget; import json; print(json.dumps(c
      otherwise would (routing loop step 2 onward) — GB1 firing does not discard the work the node
      you just recorded usage for actually produced. If aborting: follow "Failure handling"'s "User
      aborts" row instead of routing the outcome at all.
+
+## Ticketing integration (design doc §12, Q6, Q7; Step 10)
+
+A configuration knob over the already-working pipeline (`ticketing.system`, built-in default
+`none`) — every piece of this section is skipped entirely, with zero side effects, on a run whose
+resolved `ticketing.system` is `none`. `lib.ticketing` (Step 10) holds every deterministic
+decision below (mode resolution/degradation, reference parsing, link rendering, status-mapping
+lookup, the create-if-missing gate); actual ticket I/O — fetching an issue's content, posting a
+comment, applying a label or workflow transition — is host/runtime-specific and delegated exactly
+the way PR creation is for the submitter (design doc §16): use whatever GitHub/Jira tool your
+runtime provides (e.g. the GitHub MCP server's issue/comment tools for `github_issues`; the
+delegated Jira MCP connector or skill for `jira` — this pipeline never touches a Jira credential
+itself, per Q7, resolved) — if you can't determine a mechanism, say so explicitly in your report
+rather than guessing at one. **Reference-only intake** (Q6, resolved): a ticket only ever enriches
+a task the human already started with a prompt; the pipeline never watches a tracker and spawns
+runs on its own.
+
+**Startup: mode resolution and intake** (continuation of Startup step 3 above, before step 4's
+echo). Resolve the origin remote once: `git -C <repo_root> remote get-url origin` (empty/failed if
+there is none). Then:
+```
+python3 -c "from lib.ticketing import resolve_mode; import json; print(json.dumps(resolve_mode(<resolved 'ticketing' dict>, remote_url='<the remote above, or null>')))"
+```
+- **`jira` missing `ticketing.jira.url`/`ticketing.jira.project`** raises `TicketingError` — report
+  it to the user and stop, exactly like a `ConfigError` from step 3's own `resolve` call (jira is
+  always an explicit choice, never a silent degrade).
+- **`github_issues` on a repo whose origin isn't a GitHub remote** returns `{"mode": "none",
+  "degraded": true, "reason": "..."}` — **never raises**. Carry this result forward to step 4's
+  echo (tell the user) and step 7's manifest write (the durable record); nothing else happens for
+  this pipeline — from here on it behaves exactly like `system: none`.
+- **Otherwise** (`none` outright, or an active, non-degraded `github_issues`/`jira`), carry
+  `resolve_mode`'s result forward the same way, then — only when the mode is active — check
+  whether the task text itself names a ticket:
+  ```
+  python3 -c "from lib.ticketing import parse_reference; import json; print(json.dumps(parse_reference('<the raw task text>', '<mode>', project='<resolved ticketing.jira.project, jira only>')))"
+  ```
+  `None` means no reference; a task is not required to name one even with ticketing active. If it
+  returns a reference, fetch that ticket's title, description, comments, and links (host-specific,
+  above) and fold them into the `user_request` you hand the refiner (Spawning a node) as additional
+  context — the ticket is an **input document, not a conversation channel** (design doc §12
+  "Intake"): refiner questions still reach the user only through your own escalation channel below,
+  never by posting to the ticket. Then apply the ticket's start-of-run status —
+  `python3 -c "from lib.ticketing import status_for; print(status_for('start', <resolved ticketing.status_mapping>))"`
+  gives the label/workflow-state name to apply, via whatever host-specific mechanism applies it.
+  Carry the resolved reference (`system`, `id`, and — for jira — `project`) forward into the
+  manifest's `ticketing.ref` (step 7) and, when creating the worktree (step 8), its branch name.
+
+**Spec sync-back and create-if-missing** (`ticketing.sync_spec`, default `true`; the moment you
+match the refiner's `spec_ready` outcome to `T1` in the routing loop, before that edge's G1 gate
+check): if intake above already resolved `ticketing.ref`, write the just-produced `refined_spec`
+back to the ticket (issue body/pinned comment for `github_issues`; description/comment for `jira`,
+host-specific). **If ticketing is active but intake found no reference**, this is instead the
+create-if-missing moment (design doc §12 "Spec sync"):
+```
+python3 -c "from lib.ticketing import should_prompt_for_creation; print(should_prompt_for_creation('<resolved ticketing.create_if_missing>'))"
+```
+`true` (the default, `prompt`) means ask the user via `AskUserQuestion` — "is there an existing
+ticket for this? create one from the refined spec?" — **regardless of gate preset**, before
+creating anything (design doc §12: "always prompts the user first... there is deliberately no
+'always'"). `false` (`never`) means skip creation entirely: no prompt, no ticket, ticketless for
+the rest of this run. On "yes," create the ticket from `refined_spec` (host-specific), record it
+into the manifest's `ticketing.ref` (a fresh read-modify-write, same pattern as `base_commit`), and
+apply the start-of-run status exactly as intake would have. Either way — a ticket already found at
+intake, one just created, or creation declined/skipped — append an `escalation` history record
+(`detail`: "ticketing: <found at intake '<ref>' | created '<ref>' | creation declined | creation
+skipped (create_if_missing: never)>") so the outcome is durably recorded even though this isn't one
+of the eight agents `lib.journal`'s decision journal accepts entries from (it's your own prompt,
+same reasoning as GB1's history-record-not-journal-entry above).
+
+**Linking, status sync, and reporting** are each a spoke's own job from here (design doc §12
+"Agents touched"), not yours — you only ever hand them the ticketing inputs "Spawning a node"
+above describes:
+- **submitter**: PR/commit/branch linking, and the in-review status transition when the PR opens —
+  see `agents/submitter.md` "Ticketing".
+- **pr_shepherd**: the terminal status transition (merged, or reverted to `status_mapping.start` on
+  close-unmerged) and the end-of-run report comment (`ticketing.post_report`, default `true`) — see
+  `agents/pr_shepherd.md` "Ticketing".
+
+You never post to a ticket, apply a ticket label, or transition ticket status yourself outside
+Startup's own start-of-run transition above — every later touchpoint belongs to the spoke that
+owns it.
 
 ## Watching the PR (pr_shepherd)
 

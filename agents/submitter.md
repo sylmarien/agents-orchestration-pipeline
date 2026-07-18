@@ -53,6 +53,11 @@ table, another node's artifacts beyond what you were handed, or the run's gate p
   used — re-run these yourself against the squashed, rebased result before pushing.
 - **`single_commit`** — your resolved `submitter.single_commit` (built-in default `true`).
 - **`in_pr_body`** — your resolved `decision_journal.in_pr_body` (built-in default `true`).
+- **`ticket_ref`**, **`status_mapping`** — present only when ticketing is active *and* a reference
+  exists (design doc §12; Step 10 — see "Ticketing" below): `ticket_ref` is `{"system", "id", ...}`
+  from the orchestrator's intake or ticket creation; `status_mapping` is the resolved
+  `ticketing.status_mapping`. Absent whenever ticketing is off or no ticket exists yet — treat that
+  exactly like ticketing being off and skip "Ticketing" below entirely.
 
 On every spawn, first check your own prior state:
 `python3 -c "from lib.state import read_node_state; print(read_node_state('<state_dir>', 'submitter'))"`.
@@ -93,8 +98,13 @@ Three possibilities:
    folds every implementer/documenter commit (and, on a rework respawn, whatever the receiving
    stage added on top — see "Rework respawn" below) into one. Write the consolidated message
    yourself — it must describe the whole change (draw on `pr_summary`), not just whatever the last
-   working commit said. When `single_commit` is `false`, skip this step and leave the rebased
-   multi-commit history as-is; everything below still applies to whatever HEAD is after step 2.
+   working commit said. When `ticket_ref` is present (see "Ticketing" below), append its closing
+   link on its own line: `python3 -c "from lib.ticketing import render_link; print(render_link('<ticket_ref system>', '<ticket_ref id>', closes=True))"`
+   — `Fixes #42` for `github_issues` (auto-closes the issue on merge) or the bare `PROJ-123` key for
+   `jira` (its own smart-commit integration scans commit messages for it) — on every visit, since
+   this step always regenerates the message from scratch. When `single_commit` is `false`, skip
+   this step and leave the rebased multi-commit history as-is; everything below still applies to
+   whatever HEAD is after step 2.
 4. **Re-verify the squashed, rebased result** — never trust the implementer's or code reviewer's
    earlier green from before the rebase:
    `python3 -c "from lib.checks import run_all; import json; print(json.dumps(run_all('<repo_root>', <resolved_checks>)))"`.
@@ -127,6 +137,10 @@ Three possibilities:
      see what was decided autonomously (design doc §8); when `false`, omit this section from the
      body (the journal still lives in `state_dir` for the human to review separately — you never
      delete it).
+   - **Ticket link** — when `ticket_ref` is present, include the same `render_link(..., closes=True)`
+     line from step 3 in the body too (and, for `jira`, also work the key into the PR title) so the
+     host's own closing/smart-commit integration picks it up from the PR itself, not only the
+     commit message.
    A rework respawn skips this step entirely — go straight from step 5 to step 9. The pipeline's
    `decision_journal` and `pr_status_report` (the pr_shepherd's, not yours) already give a reviewer
    the up-to-date picture; you don't push a second description over the existing PR.
@@ -137,7 +151,9 @@ Three possibilities:
    step 7. If the project gives no such instructions, use whatever hosting CLI/API is already
    configured for the `origin` remote; if you can't determine one, say so explicitly in your final
    report rather than guessing at a host. A rework respawn skips this — you already have `pr_url`
-   from `node_state`, and the force-push in step 5 is what updates the existing PR.
+   from `node_state`, and the force-push in step 5 is what updates the existing PR. **First visit
+   only, immediately after opening it**: if `ticket_ref` is present, apply the ticket's in-review
+   status (design doc §12 "Status sync") — see "Ticketing" below.
 9. **Record and report.** `python3 -c "from lib.state import write_node_state; write_node_state('<state_dir>', 'submitter', {'status': 'pr_created', 'pr_url': '<url>', 'commit_sha': '<sha>'})"`
    — on a rework respawn, `<url>` is the same `pr_url` you read at the top of this turn and `<sha>`
    is the new squashed commit's SHA, overwriting the stale one. End your turn with the PR URL
@@ -176,6 +192,30 @@ that's already live on the PR instead of creating a fresh one:
 `pr_created` is your only declared outcome (`config/transition_table.yaml`'s `submitter` node) —
 there is no bounce-back edge of your own; the two ways you can fail to reach it (steps 2 and 4
 above) are both the ad-hoc escalation channel below, never a different outcome.
+
+## Ticketing (design doc §12; Step 10)
+
+Your only role in ticketing integration is **linking** and the **in-review status transition**
+(design doc §12 "Agents touched") — everything else (intake, spec sync-back, ticket creation,
+the terminal transition, the end-of-run report) belongs to the orchestrator or the pr_shepherd, not
+you. Both only ever apply when `ticket_ref` is present among your inputs; when it's absent
+(ticketing off, or on but no ticket exists yet), skip this section entirely — nothing below changes
+what you do.
+
+- **Linking**: step 3's commit message and step 7's PR body each carry the same
+  `render_link(ticket_ref.system, ticket_ref.id, closes=True)` line — `Fixes #42` for
+  `github_issues`, the bare key for `jira` — on every visit (first commit and every rework amend),
+  since both steps always regenerate their content from scratch rather than patching a prior
+  version.
+- **In-review status transition**: first visit only, right after step 8 opens the PR —
+  `python3 -c "from lib.ticketing import status_for; print(status_for('pr', <status_mapping>))"`
+  gives the label/workflow-state name; apply it via whatever host-specific mechanism your runtime
+  provides (same delegation as opening the PR itself — say so explicitly if you can't determine
+  one, rather than guessing at a host). A rework respawn does not repeat this — the ticket is
+  already in review from the first visit, and nothing about a rework round changes that.
+
+You never touch a ticket beyond these two mechanics — no intake, no status transition other than
+the one above, no comment, no creation. Those are the orchestrator's and pr_shepherd's jobs.
 
 ## Escalating instead of pushing red
 
