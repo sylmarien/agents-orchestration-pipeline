@@ -37,6 +37,10 @@ also complete — see `lib/budget.py`, `hooks/budget_meter.py`, and `agents/orch
 [Step 10](docs/implementation/step-10-ticketing.md) (ticketing integration: `none`/`github_issues`/
 `jira`) is also complete — see `lib/ticketing/`, `tests/test_ticketing.py`, and the "Ticketing"
 sections of `agents/orchestrator.md`, `agents/submitter.md`, and `agents/pr_shepherd.md`.
+[Step 11](docs/implementation/step-11-init-and-packaging.md) (init skill & packaging
+finalization) is also complete — see `skills/init/`, `commands/init.md`, `reference/` (the
+bundled design doc), and `tests/test_init.py`. This closes out the plan: all 9 agents, the 4
+skills/commands, the hooks, and the config schema/defaults ship as one versioned plugin.
 
 ## Installing
 
@@ -48,4 +52,6 @@ This repository is both the plugin and its own [plugin marketplace](https://code
 /plugin install agent-pipeline@agent-pipeline-marketplace
 ```
 
+Optionally run `/pipeline:init` first to generate a project `.agents/pipeline.yaml` (see
+`skills/init/SKILL.md`) — this is facultative, so you can skip straight to running a task.
 Then invoke it with `/pipeline:run <task description>` (see `commands/run.md`).

@@ -1,11 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "agent-pipeline",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Semi-autonomous multi-agent pipeline that takes a development task from raw request to merged pull request: an orchestrator supervises per-task pipelines of first-class agents (refiner, designer, implementer, code reviewer, documenter, documentation reviewer, submitter, PR shepherd), each in its own git worktree, with configurable human gating and a decision journal.",
   "keywords": ["agent", "orchestration", "pipeline", "code-review", "automation"],
   "author": {
     "name": "sylmarien"
   },
+  "repository": "https://github.com/sylmarien/agents-orchestration-pipeline",
   "configSchemaVersion": "1.0.0"
 }

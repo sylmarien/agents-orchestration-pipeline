@@ -53,6 +53,10 @@ table, another node's artifacts beyond what you were handed, or the run's gate p
   used — re-run these yourself against the squashed, rebased result before pushing.
 - **`single_commit`** — your resolved `submitter.single_commit` (built-in default `true`).
 - **`in_pr_body`** — your resolved `decision_journal.in_pr_body` (built-in default `true`).
+- **`resolved_config`**, **`provenance`** — the run manifest's fully resolved config and its
+  per-knob provenance (design doc §9 transparency). Used only for step 7's "Policy notes" — you
+  never reinterpret a knob's behavior yourself, only report which ones a human or the prompt
+  layer set away from their built-in default.
 - **`ticket_ref`**, **`status_mapping`** — present only when ticketing is active *and* a reference
   exists (design doc §12; Step 10 — see "Ticketing" below): `ticket_ref` is `{"system", "id", ...}`
   from the orchestrator's intake or ticket creation; `status_mapping` is the resolved
@@ -141,6 +145,13 @@ Three possibilities:
      line from step 3 in the body too (and, for `jira`, also work the key into the PR title) so the
      host's own closing/smart-commit integration picks it up from the PR itself, not only the
      commit message.
+   - **Policy notes** — one line per knob in `provenance` whose value is not `"defaults"` (i.e.
+     `project` or `prompt`, or a `gates.add`/`gates.remove` delta that names a contributing
+     layer), naming the knob and its resolved value from `resolved_config` — e.g.
+     `escalation_policy=never`, `gates.preset=full_auto` (design doc §9 transparency: "the PR body
+     notes any non-default policy that shaped the change, so reviewers know the run's regime").
+     When every knob resolved to its built-in default, omit this section rather than writing an
+     empty one.
    A rework respawn skips this step entirely — go straight from step 5 to step 9. The pipeline's
    `decision_journal` and `pr_status_report` (the pr_shepherd's, not yours) already give a reviewer
    the up-to-date picture; you don't push a second description over the existing PR.
