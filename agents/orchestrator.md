@@ -64,6 +64,10 @@ On being spawned with a task (from `/pipeline:run`, see `skills/run/SKILL.md`):
    also resolve the ticketing mode and intake a referenced ticket now, before doing anything else
    with the task text — see "Ticketing integration" below for the full contract; that section's
    "Startup: mode resolution and intake" is this step's continuation, not a separate later step.
+   If `.agents/pipeline.yaml` does not exist, mention once, alongside step 4's echo, that
+   `/pipeline:init` can generate one (design doc §14 "auto-suggested by the orchestrator when it
+   finds no pipeline.yaml") — a **suggestion, never a blocker**: this run proceeds from built-in
+   defaults regardless of whether the user takes it up.
 4. **Echo the resolved overrides back to the user** — every knob whose provenance is `project`
    or `prompt` (not `defaults`), so they see exactly what's non-default before work starts. If the
    previous step's ticketing-mode resolution came back `degraded: true` (design doc §12 — a
@@ -177,10 +181,14 @@ context once per pipeline. Then, until you reach the table's `terminal_node` (`d
      produced, all pending decision-journal entries
      (`python3 -c "from lib.journal import pending_entries; import json; print(json.dumps(pending_entries('<state_dir>')))"`),
      and the proposed next step (spawn node X) — and wait for the user's approve / revise /
-     override-decision / abort. On approve, append `gate_resolved` and continue. On
-     override-decision, follow "Handling an override outside a gate" below (the mechanism is the
-     same whether the override arrives at a gate prompt or via `/pipeline:decisions` mid-run). On
-     abort, see "Failure handling".
+     override-decision / abort. **If this is the pipeline's first gate pause** (no earlier
+     `gate_open` record with an active gate in the history you read at startup), also show the
+     run manifest's summary (resolved config, its provenance, plugin version, config schema
+     version — design doc §9 transparency: "the manifest is shown at the first human contact")
+     alongside the bundle; later gate pauses in the same run don't repeat it. On approve, append
+     `gate_resolved` and continue. On override-decision, follow "Handling an override outside a
+     gate" below (the mechanism is the same whether the override arrives at a gate prompt or via
+     `/pipeline:decisions` mid-run). On abort, see "Failure handling".
    - **Inactive:** log it as passed-through anyway (append a `gate_open` + `gate_resolved` pair
      with `detail: "passed-through"`) so the user can audit later, then continue without pausing.
 6. **Append the `transition` history record**
@@ -189,7 +197,10 @@ context once per pipeline. Then, until you reach the table's `terminal_node` (`d
 7. If `edge.to` is `done`: **auto-clean the worktree**
    (`python3 -m lib.worktree remove '{"repo_root": "<abs path>", "path": "<worktree path>"}'`) —
    the state directory is *not* deleted; it persists per design doc §4. Report the final
-   outcome to the user: PR link, decision journal, residual risks.
+   outcome to the user: PR link, decision journal, residual risks, and the manifest summary
+   (resolved config + provenance, plugin version, config schema version — design doc §9
+   transparency: "included in the final report", the same summary shown at the first gate pause
+   in step 5).
 
 Drive this loop by **reasoning over the table as data**, not by hard-coded per-node control
 flow (design doc Q9: v1 is pure-agent / LLM-interpreted routing — there is no separate routing
@@ -232,8 +243,10 @@ agent for this node regardless of whether a real agent exists; otherwise:
   `docs_changeset` out of the worktree's history itself — see `agents/documentation_reviewer.md`;
   for the submitter (Step 7): `base_commit`, `pre_docs_commit` (same slicing use as the
   documentation reviewer), the manifest's `resolved_checks` (so it can re-verify after its own
-  rebase), and its resolved `submitter.single_commit` and `decision_journal.in_pr_body` — see
-  `agents/submitter.md`; for the pr_shepherd (Step 8): `pull_request` (the submitter's `pr_url`,
+  rebase), its resolved `submitter.single_commit` and `decision_journal.in_pr_body`, and the
+  manifest's resolved config + provenance (so it can note any non-default policy in the PR body,
+  design doc §9 transparency: "the PR body notes any non-default policy that shaped the change")
+  — see `agents/submitter.md`; for the pr_shepherd (Step 8): `pull_request` (the submitter's `pr_url`,
   read from `node-state/submitter.json`) — it subscribes and watches on its own from there (see
   "Watching the PR (pr_shepherd)" below, which also covers why this node may take several spawns,
   not the usual "one spawn, one outcome," to get from G7 to merge/close) — and nothing else of
